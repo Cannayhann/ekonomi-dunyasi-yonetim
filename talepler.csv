@@ -1,0 +1,30 @@
+Zaman,Personel,Gün,Talep,Neden,Durum,Seçim,İzin Günü,Haftalık Vardiya
+2026-05-01 23:10,Süleyman,Pazartesi,İZİNLİ,diş randevusu,Onaylandı,,,
+2026-05-01 23:10,Fırat,Salı,İZİNLİ,ailevi durum,Onaylandı,,,
+2026-05-01 23:11,Fatih,Çarşamba,İZİNLİ,hastahane,Onaylandı,,,
+2026-05-01 23:11,Esra,Perşembe,İZİNLİ,iş,Onaylandı,,,
+2026-05-01 23:12,Fatma,Pazartesi,AKTİF,,Onaylandı,,,
+,Süleyman,Perşembe,,"diş randevusu
+",Onaylandı,,,
+,Fırat,Cuma,,hastahaneye gidlicek ,Onaylandı,,,
+,Fatih,Cumartesi,,izin,Onaylandı,,,
+,Esra,Salı,,izin,Onaylandı,,,
+,Tuğçe,Pazar,,izin,Onaylandı,,,
+,Nurdan,Pazartesi,,izin,Onaylandı,,,
+,Elif,Çarşamba,,izin,Onaylandı,,,
+,Ayşe,Salı,,izin,Onaylandı,,,
+,Fatma,Perşembe,,,Onaylandı,,,
+,Süleyman,Perşembe,,diş,Onaylandı,🔴 İZİNLİ,,
+,Fırat,Cuma,,izin,Onaylandı,🔴 İZİNLİ,,
+,Fatih,Cumartesi,,izin,Onaylandı,🔴 İZİNLİ,,
+,Esra,Çarşamba,,izin,Onaylandı,🔴 İZİNLİ,,
+,Tuğçe,Pazar,,izin,Onaylandı,🔴 İZİNLİ,,
+,Nurdan,Pazartesi,,izin,Onaylandı,🔴 İZİNLİ,,
+,Elif,Perşembe,,izin,Onaylandı,🔴 İZİNLİ,,
+,Ayşe,Çarşamba,,izin,Onaylandı,🔴 İZİNLİ,,
+,Fatma,Salı,,izin,Onaylandı,🔴 İZİNLİ,,
+,Sude,Cuma,,"izin
+",Onaylandı,🔴 İZİNLİ,,
+,Esra,,,,Onaylandı,,Çarşamba,Sabahçı (09:00 - 18:00)
+,Süleyman,,,,Onaylandı,,Perşembe,Sabahçı (09:00 - 18:00)
+,Fırat,,,,Onaylandı,,Perşembe,Sabahçı (09:00 - 18:00)
