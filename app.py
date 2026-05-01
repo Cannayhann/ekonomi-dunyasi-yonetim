@@ -45,7 +45,6 @@ with tab2:
     df_t = pd.read_csv(TALEPLER_FILE)
     bekleyenler = df_t[df_t["Durum"] == "Beklemede"]
     
-    # Kapasite Analizi - NaN (float) hatalarını engellemek için str() ekledik
     aksamci_counts = {g: 0 for g in gunler}
     for _, r in df_t[df_t["Durum"] != "Reddedildi"].iterrows():
         if "Akşamcı" in str(r["Haftalık Vardiya"]):
@@ -90,16 +89,11 @@ with tab2:
             for _, r in onayli.iterrows():
                 p = str(r["Personel"])
                 iz = str(r["İzin Günü"])
-                # Hata Buradaydı: str() ekleyerek float hatasını çözdük
                 shift = "A (12-21)" if "Akşamcı" in str(r["Haftalık Vardiya"]) else "S (09-18)"
-                
                 for g in gunler:
-                    if g == iz: 
-                        final_df.at[p, g] = "🔴 İZİNLİ"
-                    elif g == "Pazar": 
-                        final_df.at[p, g] = "🟢 TAM GÜÇ"
-                    else: 
-                        final_df.at[p, g] = shift
+                    if g == iz: final_df.at[p, g] = "🔴 İZİNLİ"
+                    elif g == "Pazar": final_df.at[p, g] = "🟢 TAM GÜÇ"
+                    else: final_df.at[p, g] = shift
             
             final_df.reset_index(inplace=True)
             final_df.rename(columns={'index': 'Personel'}, inplace=True)
@@ -116,6 +110,7 @@ with tab3:
             c = "#ff4b4b" if "🔴" in val_str else "#1c83e1" if "A " in val_str else "#28a745" if "S " in val_str else "#4CAF50"
             return f'background-color: {c}; color: white'
             
-        st.table(df_v.style.applymap(style_status, subset=gunler))
+        # applymap yerine map kullanılarak hata giderildi
+        st.table(df_v.style.map(style_status, subset=gunler))
     else:
         st.info("Henüz kesinleşmiş bir liste yok. 'Listeyi Oluştur' butonuna basınız.")
