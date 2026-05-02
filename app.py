@@ -477,15 +477,22 @@ if st.session_state.giris_yapildi:
     elif sayfa == "Vardiya İşlemleri":
         st.header("📅 Haftalık Vardiya Planlaması")
         tab1, tab2, tab3 = st.tabs(["✍️ Planımı Gönder", "👀 Onaylananlar (Canlı Taslak)", "📊 Kesinleşen Liste"])
-        
+
         with tab1:
+            secilen_gunler = []
+            if st.session_state.calisma_tipi == "Part-Time":
+                st.info("ℹ️ Part-Time personel olarak önce **çalışacağınız günleri**, sonra her gün için **vardiya saatinizi** seçiniz.")
+                secilen_gunler = st.multiselect(
+                    "✅ ÇALIŞACAĞINIZ Günleri Seçiniz:",
+                    gunler,
+                    key="pt_calisma_gunleri"
+                )
+
             with st.form("personel_formu", clear_on_submit=True):
                 # İZİN / ÇALIŞMA GÜNÜ TESPİTİ + VARDİYA SEÇİMİ
                 karma_secimler = []
 
                 if st.session_state.calisma_tipi == "Part-Time":
-                    st.info("ℹ️ Part-Time personel olarak önce **çalışacağınız günleri**, sonra her gün için **vardiya saatinizi** seçiniz.")
-                    secilen_gunler = st.multiselect("✅ ÇALIŞACAĞINIZ Günleri Seçiniz:", gunler)
                     calisilan_gunler = secilen_gunler
                     izin_listesi = [g for g in gunler if g not in secilen_gunler]
 
@@ -495,7 +502,11 @@ if st.session_state.giris_yapildi:
                         c1, c2 = st.columns(2)
                         for i, g in enumerate(calisilan_gunler):
                             with (c1 if i % 2 == 0 else c2):
-                                sec = st.selectbox(f"{g} vardiyası:", vardiya_secenekleri, key=f"pt_vardiya_{g}")
+                                sec = st.selectbox(
+                                    f"{g} vardiyası:",
+                                    vardiya_secenekleri,
+                                    key=f"pt_vardiya_{g}"
+                                )
                                 shift_kisa = "Sabahçı" if "Sabahçı" in sec else ("Akşamcı" if "Akşamcı" in sec else "Tam Gün")
                                 karma_secimler.append(f"{g}: {shift_kisa}")
                         haftalik_shift = "Karma | " + ", ".join(karma_secimler)
@@ -541,12 +552,18 @@ if st.session_state.giris_yapildi:
                         izin_str = ", ".join(izin_listesi) if len(izin_listesi) > 0 else "İzin Yok"
                         benzersiz_kimlik = f"{st.session_state.kullanici_adi} ({st.session_state.kullanici_mail})"
 
-                        yeni_talep = {"personel": benzersiz_kimlik, "izin_gunu": izin_str, "haftalik_vardiya": haftalik_shift, "neden": neden, "durum": "Beklemede"}
+                        yeni_talep = {
+                            "personel": benzersiz_kimlik,
+                            "izin_gunu": izin_str,
+                            "haftalik_vardiya": haftalik_shift,
+                            "neden": neden,
+                            "durum": "Beklemede"
+                        }
 
                         supabase.table('talepler').delete().eq('personel', benzersiz_kimlik).execute()
                         supabase.table('talepler').insert(yeni_talep).execute()
                         st.success("Talebiniz veritabanına işlendi ve yönetime iletildi.")
-                    
+
         with tab2:
             c1, c2 = st.columns([4, 1])
             with c1: st.info("💡 Yönetimin şu ana kadar onayladığı güncel durumu gösterir.")
