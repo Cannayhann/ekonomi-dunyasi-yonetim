@@ -4,7 +4,6 @@ import os
 import smtplib
 import random
 import string
-import base64
 from email.mime.text import MIMEText
 from datetime import datetime
 from supabase import create_client, Client
@@ -100,60 +99,53 @@ def get_taslak_df():
     taslak.rename(columns={'index': 'Personel'}, inplace=True)
     return taslak
 
-# --- ÇEREZ (CİHAZ HAFIZASI) KONTROLCÜSÜ ---
+# ==========================================
+# SİSTEM HAFIZASI (ÇEREZ) YÖNETİMİ
+# ==========================================
 cookies = CookieController()
 
-# --- SESSION STATE ---
 if "giris_yapildi" not in st.session_state:
     st.session_state.update({
         "giris_yapildi": False, "kullanici_tipi": "", "kullanici_adi": "", 
         "kullanici_mail": "", "reset_kod": "", "reset_mail": "", 
-        "calisma_tipi": "", "cikis_yapiliyor": False,
-        "manuel_cikis_kalkani": False # YENİ: Hayalet çerez engelleme kalkanı
+        "calisma_tipi": "", "cikis_yapiliyor": False, 
+        "yeni_cerez_yaz": None, "az_once_cikis_yapti": False
     })
 
-# --- YENİ: KUSURSUZ (AKILLI) ÇIKIŞ YAPMA SİSTEMİ ---
+# 1. ÇIKIŞ YAP KONTROLÜ (En üstte çalışır ve cihazın hafızasını kesin olarak siler)
 if st.session_state.get("cikis_yapiliyor"):
-    if cookies.get('edavm_user_mail'):
-        cookies.remove('edavm_user_mail')
-        
-    st.query_params.clear() # Linkteki gizli bileti tamamen imha et
-        
-    st.session_state.giris_yapildi = False
-    st.session_state.kullanici_mail = ""
-    st.session_state.cikis_yapiliyor = False
-    st.rerun()
+    cookies.remove('edavm_user_mail')
+    st.session_state.clear()
+    st.session_state.update({
+        "giris_yapildi": False,
+        "cikis_yapiliyor": False,
+        "az_once_cikis_yapti": True # Hayalet çerezi engelleme kalkanı!
+    })
 
-# --- YENİ: HİBRİT OTOMATİK GİRİŞ (URL BİLETİ + ÇEREZ) ---
-kayitli_mail = cookies.get('edavm_user_mail')
-bilet_mail = None
+# 2. YENİ GİRİŞ KONTROLÜ (Beni Hatırla seçildiyse cihazın beynine kazır)
+if st.session_state.get("yeni_cerez_yaz"):
+    cookies.set('edavm_user_mail', st.session_state.get("yeni_cerez_yaz"), max_age=30*24*60*60)
+    st.session_state.yeni_cerez_yaz = None
 
-if "session" in st.query_params:
-    try:
-        bilet_mail = base64.b64decode(st.query_params["session"]).decode('utf-8')
-    except: pass
+# 3. CİHAZDAN OTOMATİK TANIMA (Sadece az önce çıkış YAPILMADIYSA çalışır)
+if not st.session_state.get("giris_yapildi") and not st.session_state.get("az_once_cikis_yapti"):
+    kayitli_mail = cookies.get('edavm_user_mail')
+    if kayitli_mail:
+        try:
+            res = supabase.table('kullanicilar').select('*').eq('email', kayitli_mail).execute()
+            if res.data and res.data[0]["durum"] == "Onaylandı":
+                user = res.data[0]
+                st.session_state.update({
+                    "giris_yapildi": True, 
+                    "kullanici_tipi": user["rol"], 
+                    "kullanici_adi": user["isim"], 
+                    "kullanici_mail": user["email"],
+                    "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
+                })
+            else:
+                cookies.remove('edavm_user_mail')
+        except: pass
 
-aktif_mail = kayitli_mail or bilet_mail
-
-# MÜHENDİSLİK DOKUNUŞU: Sadece kullanıcı kendi eliyle çıkış yapmadıysa otomatik giriş yap!
-if not st.session_state.giris_yapildi and aktif_mail and not st.session_state.get("manuel_cikis_kalkani"):
-    try:
-        res = supabase.table('kullanicilar').select('*').eq('email', aktif_mail).execute()
-        if res.data and res.data[0]["durum"] == "Onaylandı":
-            user = res.data[0]
-            st.session_state.update({
-                "giris_yapildi": True, 
-                "kullanici_tipi": user["rol"], 
-                "kullanici_adi": user["isim"], 
-                "kullanici_mail": user["email"],
-                "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
-            })
-            if bilet_mail and not kayitli_mail:
-                cookies.set('edavm_user_mail', user["email"], max_age=30*24*60*60)
-        else:
-            if kayitli_mail: cookies.remove('edavm_user_mail')
-            st.query_params.clear()
-    except: pass
 
 # ==========================================
 # GİRİŞ / KAYIT EKRANI
@@ -177,23 +169,18 @@ if not st.session_state.giris_yapildi:
                 if res.data:
                     user = res.data[0]
                     if user["durum"] == "Onaylandı":
+                        # Cihaza yazma emrini yukarıya gönderiyoruz
                         if beni_hatirla:
-                            token = base64.b64encode(user["email"].encode('utf-8')).decode('utf-8')
-                            st.query_params["session"] = token
-                            cookies.set('edavm_user_mail', user["email"], max_age=30*24*60*60)
-                        else:
-                            if cookies.get('edavm_user_mail'): cookies.remove('edavm_user_mail')
-                            st.query_params.clear()
-                                
+                            st.session_state.yeni_cerez_yaz = user["email"]
+                            
                         st.session_state.update({
                             "giris_yapildi": True, 
                             "kullanici_tipi": user["rol"], 
                             "kullanici_adi": user["isim"], 
                             "kullanici_mail": user["email"],
-                            "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı"),
-                            "manuel_cikis_kalkani": False # Kalkanı indiriyoruz çünkü adam kendi isteğiyle giriş yaptı!
+                            "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
                         })
-                        st.rerun() 
+                        st.rerun() # Şimşek hızında paneli açar
                     else: st.warning("⏳ Hesabınız onay bekliyor.")
                 else: st.error("❌ E-posta veya şifre hatalı.")
 
@@ -276,11 +263,9 @@ if st.session_state.giris_yapildi:
         sayfa = st.radio("Menü", menu_secenekleri)
         st.divider()
         
-        def tam_cikis_yap():
-            st.session_state.cikis_yapiliyor = True
-            st.session_state.manuel_cikis_kalkani = True # Çıkış tuşuna bastığı an KALKANI KALDIR!
-            
-        st.button("🚪 Çıkış Yap", on_click=tam_cikis_yap, use_container_width=True)
+        if st.button("🚪 Çıkış Yap", use_container_width=True):
+            st.session_state.cikis_yapiliyor = True # Çıkış emrini yukarıya gönder!
+            st.rerun()
 
     if sayfa == "Profilim":
         st.header("👤 Profilimi Düzenle")
