@@ -5,6 +5,9 @@ import smtplib
 import random
 import string
 import base64
+import hashlib
+import hmac
+import time
 from email.mime.text import MIMEText
 from datetime import datetime
 from supabase import create_client, Client
@@ -23,6 +26,92 @@ BG_PATH = os.path.join(THEME_DIR, "arkaplan.png")
 
 gunler = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 vardiya_secenekleri = ["Sabahçı (09:00 - 18:00)", "Akşamcı (12:00 - 21:00)", "Tam Gün (09:00 - 21:00)"]
+
+# --- GÜVENLİK YARDIMCI FONKSİYONLARI ---
+# Not: Eski düz metin şifreler, kullanıcı ilk başarılı giriş yaptığında otomatik hash formatına çevrilir.
+HASH_ITERATIONS = 200_000
+SESSION_MAX_AGE = 30 * 24 * 60 * 60  # 30 gün
+
+def get_auth_secret():
+    """Cookie oturum imzası için gizli anahtar.
+    Streamlit Secrets içine şunu ekleyin:
+    [auth]
+    secret_key = "uzun-rastgele-bir-deger"
+    """
+    try:
+        return st.secrets["auth"]["secret_key"]
+    except Exception:
+        # Uygulama hiç açılmasın diye sabit fallback veriyoruz; canlı kullanımda mutlaka değiştirin.
+        return "CHANGE_ME__ED_AVM_AUTH_SECRET"
+
+def hash_password(password: str) -> str:
+    salt = os.urandom(16).hex()
+    pwd_hash = hashlib.pbkdf2_hmac(
+        "sha256",
+        str(password).encode("utf-8"),
+        salt.encode("utf-8"),
+        HASH_ITERATIONS
+    ).hex()
+    return f"pbkdf2_sha256${HASH_ITERATIONS}${salt}${pwd_hash}"
+
+def verify_password(password: str, stored_password: str) -> bool:
+    stored_password = str(stored_password or "")
+    password = str(password or "")
+
+    # Yeni güvenli format
+    if stored_password.startswith("pbkdf2_sha256$"):
+        try:
+            _, iter_str, salt, expected_hash = stored_password.split("$", 3)
+            test_hash = hashlib.pbkdf2_hmac(
+                "sha256",
+                password.encode("utf-8"),
+                salt.encode("utf-8"),
+                int(iter_str)
+            ).hex()
+            return hmac.compare_digest(test_hash, expected_hash)
+        except Exception:
+            return False
+
+    # Geriye dönük uyumluluk: veritabanındaki eski düz metin şifreleri doğrular.
+    return hmac.compare_digest(password, stored_password)
+
+def make_session_token(email: str) -> str:
+    exp = int(time.time()) + SESSION_MAX_AGE
+    payload = f"{email}|{exp}"
+    sig = hmac.new(
+        get_auth_secret().encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+    return base64.urlsafe_b64encode(f"{payload}|{sig}".encode("utf-8")).decode("utf-8")
+
+def parse_session_token(token: str):
+    try:
+        decoded = base64.urlsafe_b64decode(str(token).encode("utf-8")).decode("utf-8")
+        email, exp_str, sig = decoded.rsplit("|", 2)
+        payload = f"{email}|{exp_str}"
+        expected_sig = hmac.new(
+            get_auth_secret().encode("utf-8"),
+            payload.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+        if int(exp_str) < int(time.time()):
+            return None
+        return email
+    except Exception:
+        return None
+
+def safe_db_execute(query, fallback=None, show_error=False, error_message="Veritabanı işlemi başarısız."):
+    try:
+        return query.execute()
+    except Exception as exc:
+        if show_error:
+            st.error(f"{error_message} Detay: {exc}")
+        return fallback
+
+
 
 # --- TEMA UYGULAMA MOTORU ---
 def tema_uygula():
@@ -164,22 +253,28 @@ if "giris_yapildi" not in st.session_state:
     })
 
 if st.session_state.get("cikis_yapiliyor"):
-    try: cookies.remove('edavm_user_mail')
-    except Exception: pass
+    try:
+        cookies.remove('edavm_user_session')
+        cookies.remove('edavm_user_mail')  # eski sürümden kalmış olabilir
+    except Exception:
+        pass
     st.query_params.clear()
     st.session_state.clear()
     st.session_state.update({"giris_yapildi": False, "cikis_yapiliyor": False, "az_once_cikis_yapti": True})
 
 if st.session_state.get("yeni_cerez_yaz"):
-    cookies.set('edavm_user_mail', st.session_state.get("yeni_cerez_yaz"), max_age=30*24*60*60)
+    cookies.set('edavm_user_session', st.session_state.get("yeni_cerez_yaz"), max_age=SESSION_MAX_AGE)
     st.session_state.yeni_cerez_yaz = None
 
-kayitli_mail = cookies.get('edavm_user_mail')
-bilet_mail = None
-if "session" in st.query_params:
-    try: bilet_mail = base64.b64decode(st.query_params["session"]).decode('utf-8')
-    except: pass
-aktif_mail = kayitli_mail or bilet_mail
+kayitli_token = cookies.get('edavm_user_session')
+aktif_mail = parse_session_token(kayitli_token) if kayitli_token else None
+
+# Eski sürümden kalan güvensiz mail cookie'si varsa temizle.
+try:
+    if cookies.get('edavm_user_mail'):
+        cookies.remove('edavm_user_mail')
+except Exception:
+    pass
 
 if not st.session_state.get("giris_yapildi") and aktif_mail and not st.session_state.get("az_once_cikis_yapti"):
     try:
@@ -191,14 +286,14 @@ if not st.session_state.get("giris_yapildi") and aktif_mail and not st.session_s
                 "kullanici_adi": user["isim"], "kullanici_mail": user["email"],
                 "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
             })
-            if bilet_mail and not kayitli_mail:
-                cookies.set('edavm_user_mail', user["email"], max_age=30*24*60*60)
         else:
-            if kayitli_mail: 
-                try: cookies.remove('edavm_user_mail')
-                except: pass
+            try:
+                cookies.remove('edavm_user_session')
+            except Exception:
+                pass
             st.query_params.clear()
-    except: pass
+    except Exception:
+        pass
 
 # ==========================================
 # GİRİŞ / KAYIT EKRANI
@@ -220,28 +315,37 @@ if not st.session_state.giris_yapildi:
             beni_hatirla = st.checkbox("Beni Hatırla (Cihazda Oturumu Açık Tut)", value=False)
             
             if st.button("Sisteme Gir"):
-                res = supabase.table('kullanicilar').select('*').eq('email', email_in).eq('sifre', sifre_in).execute()
+                res = supabase.table('kullanicilar').select('*').eq('email', email_in).execute()
                 if res.data:
                     user = res.data[0]
-                    if user["durum"] == "Onaylandı":
-                        if beni_hatirla:
-                            token = base64.b64encode(user["email"].encode('utf-8')).decode('utf-8')
-                            st.query_params["session"] = token
-                            st.session_state.yeni_cerez_yaz = user["email"]
-                        else:
-                            try:
-                                if cookies.get('edavm_user_mail'): cookies.remove('edavm_user_mail')
-                            except: pass
+                    if verify_password(sifre_in, user.get("sifre", "")):
+                        if user["durum"] == "Onaylandı":
+                            # Eski düz metin şifre varsa, ilk başarılı girişte otomatik güvenli hash'e çevir.
+                            if not str(user.get("sifre", "")).startswith("pbkdf2_sha256$"):
+                                supabase.table('kullanicilar').update({"sifre": hash_password(sifre_in)}).eq('email', user["email"]).execute()
+
+                            if beni_hatirla:
+                                st.session_state.yeni_cerez_yaz = make_session_token(user["email"])
+                            else:
+                                try:
+                                    if cookies.get('edavm_user_session'): cookies.remove('edavm_user_session')
+                                    if cookies.get('edavm_user_mail'): cookies.remove('edavm_user_mail')  # eski cookie temizliği
+                                except Exception:
+                                    pass
                             st.query_params.clear()
-                                
-                        st.session_state.update({
-                            "giris_yapildi": True, "kullanici_tipi": user["rol"], 
-                            "kullanici_adi": user["isim"], "kullanici_mail": user["email"],
-                            "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı"), "az_once_cikis_yapti": False 
-                        })
-                        st.rerun() 
-                    else: st.warning("⏳ Hesabınız onay bekliyor.")
-                else: st.error("❌ E-posta veya şifre hatalı.")
+
+                            st.session_state.update({
+                                "giris_yapildi": True, "kullanici_tipi": user["rol"], 
+                                "kullanici_adi": user["isim"], "kullanici_mail": user["email"],
+                                "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı"), "az_once_cikis_yapti": False 
+                            })
+                            st.rerun() 
+                        else:
+                            st.warning("⏳ Hesabınız onay bekliyor.")
+                    else:
+                        st.error("❌ E-posta veya şifre hatalı.")
+                else:
+                    st.error("❌ E-posta veya şifre hatalı.")
 
         elif sekme == "📝 Kayıt Ol":
             with st.form("kayit"):
@@ -256,7 +360,7 @@ if not st.session_state.giris_yapildi:
                     if res_kontrol.data: st.error("Bu e-posta zaten sistemde kayıtlı.")
                     elif isim == "" or mail == "" or sifre == "": st.warning("Lütfen zorunlu alanları doldurun.")
                     else:
-                        yeni_veri = {"isim": str(isim.strip().title()), "email": str(mail), "sifre": str(sifre), "telefon": str(tel), "durum": "Beklemede", "rol": "Personel", "calisma_tipi": calisma_tipi}
+                        yeni_veri = {"isim": str(isim.strip().title()), "email": str(mail), "sifre": hash_password(sifre), "telefon": str(tel), "durum": "Beklemede", "rol": "Personel", "calisma_tipi": calisma_tipi}
                         supabase.table('kullanicilar').insert(yeni_veri).execute()
                         mesaj = f"Merhaba {isim.strip().title()},\n\nSisteme kayıt talebiniz başarıyla alınmıştır. Yönetim onayından sonra panelinize giriş yapabilirsiniz.\n\nİyi çalışmalar,\nED-AVM Yönetim"
                         mail_gonder(mail, "ED-AVM | Kayıt Talebiniz Alındı", mesaj)
@@ -279,7 +383,7 @@ if not st.session_state.giris_yapildi:
                 yeni_sifre = st.text_input("Yeni Şifreniz:", type="password")
                 if st.button("Şifreyi Güncelle"):
                     if kod_in == st.session_state.reset_kod:
-                        supabase.table('kullanicilar').update({"sifre": str(yeni_sifre)}).eq('email', st.session_state.reset_mail).execute()
+                        supabase.table('kullanicilar').update({"sifre": hash_password(yeni_sifre)}).eq('email', st.session_state.reset_mail).execute()
                         st.success("Şifreniz güncellendi!"); st.session_state.reset_kod = ""
                     else: st.error("Kod hatalı.")
 
@@ -354,12 +458,18 @@ if st.session_state.giris_yapildi:
             else:
                 yeni_tip = u_data.get("calisma_tipi", "Tam Zamanlı")
                 
-            yeni_sifre = st.text_input("Şifre:", value=str(u_data["sifre"]), type="password")
+            yeni_sifre = st.text_input("Yeni Şifre (değiştirmek istemiyorsanız boş bırakın):", type="password")
             
             if st.button("Kaydet"):
-                supabase.table('kullanicilar').update({
-                    "isim": str(yeni_isim), "telefon": str(yeni_tel), "calisma_tipi": str(yeni_tip), "sifre": str(yeni_sifre)
-                }).eq('email', st.session_state.kullanici_mail).execute()
+                guncel_veri = {
+                    "isim": str(yeni_isim),
+                    "telefon": str(yeni_tel),
+                    "calisma_tipi": str(yeni_tip)
+                }
+                if yeni_sifre.strip():
+                    guncel_veri["sifre"] = hash_password(yeni_sifre)
+
+                supabase.table('kullanicilar').update(guncel_veri).eq('email', st.session_state.kullanici_mail).execute()
                 st.session_state.kullanici_adi = str(yeni_isim)
                 st.session_state.calisma_tipi = str(yeni_tip)
                 st.success("Profiliniz başarıyla güncellendi!"); st.rerun()
@@ -492,7 +602,7 @@ if st.session_state.giris_yapildi:
                         expander_title = f"⚙️ {row['isim']} ({row['rol']} - {mevcut_tip})"
                         
                     with st.expander(expander_title):
-                        st.write(f"Mail: {row['email']} | Tel: {row['telefon']} | Şifre: {row['sifre']}")
+                        st.write(f"Mail: {row['email']} | Tel: {row['telefon']}")
                         
                         if row['rol'] != 'Yonetici':
                             idx_tip = 0 if mevcut_tip == "Tam Zamanlı" else 1
