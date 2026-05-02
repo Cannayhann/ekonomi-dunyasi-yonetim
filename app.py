@@ -114,7 +114,12 @@ if "giris_yapildi" not in st.session_state:
 
 # 1. ÇIKIŞ YAP KONTROLÜ (En üstte çalışır ve cihazın hafızasını kesin olarak siler)
 if st.session_state.get("cikis_yapiliyor"):
-    cookies.remove('edavm_user_mail')
+    # HATA ÇÖZÜMÜ BURADA: Eğer çerez zaten yoksa (kutucuk seçilmemişse) hata verme, sessizce geç.
+    try:
+        cookies.remove('edavm_user_mail')
+    except Exception:
+        pass
+        
     st.session_state.clear()
     st.session_state.update({
         "giris_yapildi": False,
@@ -143,7 +148,9 @@ if not st.session_state.get("giris_yapildi") and not st.session_state.get("az_on
                     "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
                 })
             else:
-                cookies.remove('edavm_user_mail')
+                try:
+                    cookies.remove('edavm_user_mail')
+                except: pass
         except: pass
 
 
@@ -263,9 +270,10 @@ if st.session_state.giris_yapildi:
         sayfa = st.radio("Menü", menu_secenekleri)
         st.divider()
         
-        if st.button("🚪 Çıkış Yap", use_container_width=True):
-            st.session_state.cikis_yapiliyor = True # Çıkış emrini yukarıya gönder!
-            st.rerun()
+        def tam_cikis_yap():
+            st.session_state.cikis_yapiliyor = True
+            
+        st.button("🚪 Çıkış Yap", on_click=tam_cikis_yap, use_container_width=True)
 
     if sayfa == "Profilim":
         st.header("👤 Profilimi Düzenle")
