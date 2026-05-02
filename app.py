@@ -4,10 +4,10 @@ import os
 import smtplib
 import random
 import string
+import base64
 from email.mime.text import MIMEText
 from datetime import datetime
 from supabase import create_client, Client
-from streamlit_cookies_controller import CookieController
 
 # 1. SİSTEM AYARLARI
 st.set_page_config(page_title="ED-AVM Yönetim", layout="wide")
@@ -99,18 +99,16 @@ def get_taslak_df():
     taslak.rename(columns={'index': 'Personel'}, inplace=True)
     return taslak
 
-# --- ÇEREZ (COOKIE) KONTROLCÜSÜ ---
-cookies = CookieController()
-
 # --- SESSION STATE ---
 if "giris_yapildi" not in st.session_state:
     st.session_state.update({"giris_yapildi": False, "kullanici_tipi": "", "kullanici_adi": "", "kullanici_mail": "", "reset_kod": "", "reset_mail": "", "calisma_tipi": ""})
 
-# --- OTOMATİK GİRİŞ (BENİ HATIRLA) SİSTEMİ ---
+# --- YENİ: KRİPTOLU "GÜVENLİ BİLET" SİSTEMİ (BENİ HATIRLA) ---
 if not st.session_state.giris_yapildi:
-    kayitli_mail = cookies.get('edavm_user_mail')
-    if kayitli_mail:
+    if "session" in st.query_params:
         try:
+            # URL'deki şifreli bileti çözüyoruz
+            kayitli_mail = base64.b64decode(st.query_params["session"]).decode('utf-8')
             res = supabase.table('kullanicilar').select('*').eq('email', kayitli_mail).execute()
             if res.data and res.data[0]["durum"] == "Onaylandı":
                 user = res.data[0]
@@ -121,9 +119,6 @@ if not st.session_state.giris_yapildi:
                     "kullanici_mail": user["email"],
                     "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
                 })
-                st.rerun() # Hafızadan tanıdıysa ana ekrana atla
-            else:
-                cookies.remove('edavm_user_mail') # Hesap silinmişse veya onaylanmamışsa cihazdan unut
         except:
             pass
 
@@ -142,16 +137,17 @@ if not st.session_state.giris_yapildi:
         if sekme == "🔑 Giriş Yap":
             email_in = st.text_input("E-posta").strip().lower()
             sifre_in = st.text_input("Şifre", type="password")
-            beni_hatirla = st.checkbox("Beni Hatırla (Cihazda Oturumu Açık Tut)", value=True)
+            beni_hatirla = st.checkbox("Beni Hatırla (Sayfa yenilense de açık kalsın)", value=True)
             
             if st.button("Sisteme Gir"):
                 res = supabase.table('kullanicilar').select('*').eq('email', email_in).eq('sifre', sifre_in).execute()
                 if res.data:
                     user = res.data[0]
                     if user["durum"] == "Onaylandı":
-                        # Seçiliyse Çerezi 30 Günlük Kaydet
+                        # Seçiliyse maili kriptolayıp URL'ye güvenli bilet olarak asıyoruz
                         if beni_hatirla:
-                            cookies.set('edavm_user_mail', user["email"], max_age=30*24*60*60)
+                            token = base64.b64encode(user["email"].encode('utf-8')).decode('utf-8')
+                            st.query_params["session"] = token
                             
                         st.session_state.update({
                             "giris_yapildi": True, 
@@ -240,7 +236,7 @@ else:
         sayfa = st.radio("Menü", menu_secenekleri)
         st.divider()
         if st.button("🚪 Çıkış Yap", use_container_width=True):
-            cookies.remove('edavm_user_mail') # Çıkış yaptığında cihazdan tamamen unut
+            st.query_params.clear() # Çıkış yaptığında güvenli bileti yırtıp atıyoruz
             st.session_state.giris_yapildi = False
             st.rerun()
 
