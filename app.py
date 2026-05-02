@@ -76,11 +76,11 @@ def style_status(v):
     elif "S " in val_str: c = "#28a745"
     elif "T " in val_str: c = "#6f42c1"
     elif "🟢" in val_str: c = "#4CAF50"
-    elif "⏳" in val_str: c = "#6c757d" # Belirsiz rengi
+    elif "⏳" in val_str: c = "#6c757d"
     else: c = ""
     return f'background-color: {c}; color: white' if c else ''
 
-# --- CANLI TASLAK OLUŞTURUCU (YENİ) ---
+# --- CANLI TASLAK OLUŞTURUCU ---
 def get_taslak_df():
     df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
     aktifler = df_k[df_k["Durum"] == "Onaylandı"]["Isim"].tolist()
@@ -253,7 +253,6 @@ else:
     # --- VARDİYA İŞLEMLERİ (PERSONEL) ---
     elif sayfa == "Vardiya İşlemleri":
         st.header("📅 Haftalık Vardiya Planlaması")
-        # YENİ SEKME: Canlı Taslak eklendi
         tab1, tab2, tab3 = st.tabs(["✍️ Planımı Gönder", "👀 Onaylananlar (Canlı Taslak)", "📊 Kesinleşen Liste"])
         
         with tab1:
@@ -352,7 +351,7 @@ else:
 
             st.divider()
             
-            # --- 2. ONAYLANANLARI DÜZENLEME (YENİ ÖZELLİK) ---
+            # --- 2. ONAYLANANLARI DÜZENLEME VE SİLME (YENİ SİL BUTONU) ---
             st.subheader("2. Onaylanmış Talepleri Düzenle")
             onayli_talepler = df_t[df_t["Durum"] == "Onaylandı"]
             if len(onayli_talepler) > 0:
@@ -370,16 +369,21 @@ else:
                                 else: def_var_idx = 0
                                 guncel_vardiya = st.radio("Vardiyayı Değiştir:", vardiya_secenekleri, index=def_var_idx)
                             
-                            c1, c2 = st.columns(2)
+                            c1, c2, c3 = st.columns(3)
                             if c1.form_submit_button("🔄 Güncelle"):
                                 df_t_guncel = pd.read_csv(TALEPLER_FILE, dtype=str)
                                 df_t_guncel.at[idx, "İzin Günü"] = str(guncel_izin)
                                 df_t_guncel.at[idx, "Haftalık Vardiya"] = str(guncel_vardiya)
                                 df_t_guncel.to_csv(TALEPLER_FILE, index=False)
                                 st.rerun()
-                            if c2.form_submit_button("⚠️ Onayı İptal Et (Beklemeye Al)"):
+                            if c2.form_submit_button("⚠️ İptal Et (Beklemeye Al)"):
                                 df_t_guncel = pd.read_csv(TALEPLER_FILE, dtype=str)
                                 df_t_guncel.at[idx, "Durum"] = "Beklemede"
+                                df_t_guncel.to_csv(TALEPLER_FILE, index=False)
+                                st.rerun()
+                            if c3.form_submit_button("🗑️ Kaydı Sil"):
+                                df_t_guncel = pd.read_csv(TALEPLER_FILE, dtype=str)
+                                df_t_guncel = df_t_guncel.drop(idx)
                                 df_t_guncel.to_csv(TALEPLER_FILE, index=False)
                                 st.rerun()
             else: st.info("Henüz onaylanmış talep yok.")
@@ -415,14 +419,23 @@ else:
                 st.success("Sıfırlandı."); st.rerun()
             st.divider()
             col_yayin, col_mail = st.columns(2)
+            
+            # --- YAYINLAMA VE OTOMATİK TEMİZLİK ---
             with col_yayin:
                 if st.button("🚀 Listeyi Kesinleştir ve Yayınla"):
                     taslak_df = get_taslak_df()
                     if not taslak_df.empty:
+                        # 1. Kesin listeyi vardiya_duzeni.csv'ye yaz ve yayına al
                         taslak_df.to_csv(VARDIYA_FILE, index=False)
                         with open(YAYIN_FILE, "w") as f: f.write("YAYINLANDI")
-                        st.success("Liste yayınlandı!"); st.rerun()
+                        
+                        # 2. OTOMATİK TEMİZLİK: Eski talepleri uçur
+                        pd.DataFrame(columns=["Personel", "İzin Günü", "Haftalık Vardiya", "Neden", "Durum"]).to_csv(TALEPLER_FILE, index=False)
+                        
+                        st.success("✅ Liste başarıyla yayınlandı ve talep listesi yeni hafta için temizlendi!")
+                        st.rerun()
                     else: st.warning("Onaylı plan yok.")
+                    
             with col_mail:
                 if st.button("📧 Yayın Maili At"):
                     st.success("Mail sistemi hazır.")
