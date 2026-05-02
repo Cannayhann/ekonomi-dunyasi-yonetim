@@ -14,10 +14,11 @@ TALEPLER_FILE = "talepler.csv"
 VARDIYA_FILE = "vardiya_duzeni.csv"
 YAYIN_FILE = "yayin_durumu.txt"
 KULLANICI_FILE = "kullanicilar.csv"
-BASVURU_FILE = "basvurular.csv" # YENİ: Başvuruların tutulacağı dosya
+BASVURU_FILE = "basvurular.csv" 
 PROFILE_DIR = "profil_fotograflari"
 
 gunler = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+vardiya_secenekleri = ["Sabahçı (09:00 - 18:00)", "Akşamcı (12:00 - 21:00)", "Tam Gün (09:00 - 21:00)"] # YENİ VARDİYA EKLENDİ
 os.makedirs(PROFILE_DIR, exist_ok=True)
 
 # --- VERİTABANI KENDİNİ TAMİR ETME ---
@@ -81,6 +82,16 @@ def mail_gonder(alici_mail, konu, mesaj_metni):
 
 def kod_uret():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+# --- TABLO RENKLENDİRME FONKSİYONU ---
+def style_status(v):
+    val_str = str(v)
+    if "🔴" in val_str: c = "#ff4b4b" # İzinli
+    elif "A " in val_str: c = "#1c83e1" # Akşamcı
+    elif "S " in val_str: c = "#28a745" # Sabahçı
+    elif "T " in val_str: c = "#6f42c1" # Tam Gün (Mor)
+    else: c = "#4CAF50" # Tam Güç
+    return f'background-color: {c}; color: white'
 
 # --- SESSION STATE ---
 if "giris_yapildi" not in st.session_state:
@@ -160,7 +171,6 @@ if not st.session_state.giris_yapildi:
                     else:
                         st.error("Girdiğiniz kod hatalı.")
 
-        # YENİ EKLENEN: İŞ BAŞVURUSU EKRANI
         elif sekme == "👔 İş Başvurusu":
             st.info("Ekonomi Dünyası AVM ekibine katılmak için aşağıdaki formu doldurabilirsiniz. Özgeçmişiniz yönetimimiz tarafından incelenecektir.")
             with st.form("is_basvurusu"):
@@ -251,7 +261,7 @@ else:
             st.info("Haftalık rotasyon kuralına göre seçim yapınız.")
             with st.form("personel_formu", clear_on_submit=True):
                 izin_gunu = st.selectbox("Bu hafta hangi gün İZİNLİ olacaksınız?", gunler)
-                haftalik_shift = st.radio("Hangi vardiyada olacaksınız?", ["Sabahçı (09:00 - 18:00)", "Akşamcı (12:00 - 21:00)"])
+                haftalik_shift = st.radio("Hangi vardiyada olacaksınız?", vardiya_secenekleri)
                 neden = st.text_area("Yönetime Notunuz (İsteğe Bağlı):")
                 
                 if st.form_submit_button("Planımı Gönder"):
@@ -264,10 +274,6 @@ else:
             if yayin_durumu == "YAYINLANDI":
                 if os.path.exists(VARDIYA_FILE):
                     df_v = pd.read_csv(VARDIYA_FILE, dtype=str)
-                    def style_status(v):
-                        val_str = str(v)
-                        c = "#ff4b4b" if "🔴" in val_str else "#1c83e1" if "A " in val_str else "#28a745" if "S " in val_str else "#4CAF50"
-                        return f'background-color: {c}; color: white'
                     st.table(df_v.style.map(style_status, subset=gunler))
             else:
                 st.warning("⚠️ Bu haftanın listesi henüz yönetim tarafından yayınlanmamıştır.")
@@ -278,19 +284,14 @@ else:
         if yayin_durumu == "YAYINLANDI":
             if os.path.exists(VARDIYA_FILE):
                 df_v = pd.read_csv(VARDIYA_FILE, dtype=str)
-                def style_status(v):
-                    val_str = str(v)
-                    c = "#ff4b4b" if "🔴" in val_str else "#1c83e1" if "A " in val_str else "#28a745" if "S " in val_str else "#4CAF50"
-                    return f'background-color: {c}; color: white'
                 st.table(df_v.style.map(style_status, subset=gunler))
         else:
             st.warning("⚠️ Bu haftanın listesi henüz yayınlanmadığı için görüntülenemiyor.")
 
-    # --- 4. SAYFA: YÖNETİCİ PANELİ (SADECE YÖNETİCİ İÇİN) ---
+    # --- 4. SAYFA: YÖNETİCİ PANELİ ---
     elif sayfa == "Yönetici Paneli" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("👑 Yönetim Kontrol Merkezi")
         
-        # YENİ 5. SEKME EKLENDİ (Başvurular)
         tab_k, tab_t, tab_m, tab_y, tab_b = st.tabs(["👥 Kullanıcılar", "📥 Gelen Talepler", "🛠️ Manuel Planlama", "🚀 Yayınlama", "👔 İK Başvuruları"])
         
         with tab_k:
@@ -349,9 +350,11 @@ else:
                                 yeni_izin = st.selectbox("İzin Gününü Ata:", gunler, index=def_iz_idx)
                                 
                             with col_var:
-                                var_ops = ["Sabahçı (09:00 - 18:00)", "Akşamcı (12:00 - 21:00)"]
-                                def_var_idx = 0 if "Sabahçı" in str(row['Haftalık Vardiya']) else 1
-                                yeni_vardiya = st.radio("Vardiyayı Ata:", var_ops, index=def_var_idx)
+                                if "Akşamcı" in str(row['Haftalık Vardiya']): def_var_idx = 1
+                                elif "Tam" in str(row['Haftalık Vardiya']): def_var_idx = 2
+                                else: def_var_idx = 0
+                                
+                                yeni_vardiya = st.radio("Vardiyayı Ata:", vardiya_secenekleri, index=def_var_idx)
                                 
                             c1, c2 = st.columns(2)
                             btn_onay = c1.form_submit_button("✅ Değişikliklerle Onayla")
@@ -390,7 +393,7 @@ else:
                 with st.form("manuel_atama"):
                     secilen_kisi = st.selectbox("Personel Seçiniz:", aktif_personel_listesi)
                     secilen_izin = st.selectbox("İzin Gününü Belirleyin:", gunler)
-                    secilen_vardiya = st.radio("Vardiyasını Belirleyin:", ["Sabahçı (09:00 - 18:00)", "Akşamcı (12:00 - 21:00)"])
+                    secilen_vardiya = st.radio("Vardiyasını Belirleyin:", vardiya_secenekleri)
                     
                     if st.form_submit_button("Sisteme İşle (Otomatik Onaylı)"):
                         df_t = pd.read_csv(TALEPLER_FILE, dtype=str)
@@ -423,7 +426,12 @@ else:
                         for _, r in onayli.iterrows():
                             p = str(r["Personel"])
                             iz = str(r["İzin Günü"])
-                            shift = "A (12-21)" if "Akşamcı" in str(r["Haftalık Vardiya"]) else "S (09-18)"
+                            
+                            vardiya_str = str(r["Haftalık Vardiya"])
+                            if "Akşamcı" in vardiya_str: shift = "A (12-21)"
+                            elif "Tam" in vardiya_str: shift = "T (09-21)"
+                            else: shift = "S (09-18)"
+                            
                             for g in gunler:
                                 if g == iz: final_df.at[p, g] = "🔴 İZİNLİ"
                                 elif g == "Pazar": final_df.at[p, g] = "🟢 TAM GÜÇ"
@@ -448,7 +456,6 @@ else:
                         else:
                             st.error("Önce listeyi yayınlamalısınız!")
 
-        # YENİ EKLENEN: İŞ BAŞVURULARI SEKME İÇERİĞİ
         with tab_b:
             st.subheader("Gelen İş Başvuruları")
             df_b = pd.read_csv(BASVURU_FILE, dtype=str)
