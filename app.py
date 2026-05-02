@@ -1404,12 +1404,12 @@ if st.session_state.giris_yapildi:
 
                     manuel_plan = {}
                     for g in gunler:
-        manuel_plan[g] = st.selectbox(
-        f"{g}:",
-        ADMIN_GUN_DURUMLARI,
-        index=1,
-        key=f"manuel_{g}"
-    )
+                        manuel_plan[g] = st.selectbox(
+                            f"{g}:",
+                            ADMIN_GUN_DURUMLARI,
+                            index=1,
+                            key=f"manuel_{g}"
+                        )
 
                     izin_str, vardiya_str = vardiya_plani_db_formatina_cevir(manuel_plan)
 
