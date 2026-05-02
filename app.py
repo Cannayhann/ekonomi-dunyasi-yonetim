@@ -137,7 +137,7 @@ if not st.session_state.giris_yapildi:
         if sekme == "🔑 Giriş Yap":
             email_in = st.text_input("E-posta").strip().lower()
             sifre_in = st.text_input("Şifre", type="password")
-            beni_hatirla = st.checkbox("Beni Hatırla (Sayfa yenilense de açık kalsın)", value=True)
+            beni_hatirla = st.checkbox("Beni Hatırla", value=True)
             
             if st.button("Sisteme Gir"):
                 res = supabase.table('kullanicilar').select('*').eq('email', email_in).eq('sifre', sifre_in).execute()
