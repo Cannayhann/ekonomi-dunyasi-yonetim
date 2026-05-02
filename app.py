@@ -417,6 +417,26 @@ def gun_bazli_vardiya_editoru(prefix: str, izin_gunu: str = "İzin Yok", haftali
     st.markdown("**Gün bazlı vardiya düzenleme:**")
     st.caption("Her gün için İzinli / Sabahçı / Akşamcı / Tam Gün seçebilirsiniz.")
 
+    for g in gunler:
+        mevcut_deger = mevcut_plan.get(g, "Sabahçı")
+
+        if mevcut_deger not in ADMIN_GUN_DURUMLARI:
+            mevcut_deger = "Sabahçı"
+
+        yeni_plan[g] = st.selectbox(
+            f"{g}:",
+            ADMIN_GUN_DURUMLARI,
+            index=ADMIN_GUN_DURUMLARI.index(mevcut_deger),
+            key=f"{prefix}_{g}"
+        )
+
+    return vardiya_plani_db_formatina_cevir(yeni_plan)
+    mevcut_plan = vardiya_plani_oku(izin_gunu, haftalik_vardiya)
+    yeni_plan = {}
+
+    st.markdown("**Gün bazlı vardiya düzenleme:**")
+    st.caption("Her gün için İzinli / Sabahçı / Akşamcı / Tam Gün seçebilirsiniz.")
+
     c1, c2 = st.columns(2)
 
     for i, g in enumerate(gunler):
@@ -1383,16 +1403,13 @@ if st.session_state.giris_yapildi:
                     st.markdown("**Manuel gün bazlı plan:**")
 
                     manuel_plan = {}
-                    c1, c2 = st.columns(2)
-
-                    for i, g in enumerate(gunler):
-                        with (c1 if i % 2 == 0 else c2):
-                            manuel_plan[g] = st.selectbox(
-                                f"{g}:",
-                                ADMIN_GUN_DURUMLARI,
-                                index=1,
-                                key=f"manuel_{g}"
-                            )
+                    for g in gunler:
+        manuel_plan[g] = st.selectbox(
+        f"{g}:",
+        ADMIN_GUN_DURUMLARI,
+        index=1,
+        key=f"manuel_{g}"
+    )
 
                     izin_str, vardiya_str = vardiya_plani_db_formatina_cevir(manuel_plan)
 
