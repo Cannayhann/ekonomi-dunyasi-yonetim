@@ -8,6 +8,7 @@ import base64
 from email.mime.text import MIMEText
 from datetime import datetime
 from supabase import create_client, Client
+from streamlit_cookies_controller import CookieController
 
 # 1. SİSTEM AYARLARI
 st.set_page_config(page_title="ED-AVM Yönetim", layout="wide")
@@ -99,16 +100,22 @@ def get_taslak_df():
     taslak.rename(columns={'index': 'Personel'}, inplace=True)
     return taslak
 
+# --- ÇEREZ (CİHAZ HAFIZASI) KONTROLCÜSÜ ---
+cookies = CookieController()
+
 # --- SESSION STATE ---
 if "giris_yapildi" not in st.session_state:
-    st.session_state.update({"giris_yapildi": False, "kullanici_tipi": "", "kullanici_adi": "", "kullanici_mail": "", "reset_kod": "", "reset_mail": "", "calisma_tipi": ""})
+    st.session_state.update({
+        "giris_yapildi": False, "kullanici_tipi": "", "kullanici_adi": "", 
+        "kullanici_mail": "", "reset_kod": "", "reset_mail": "", 
+        "calisma_tipi": "", "giris_adim_2": False
+    })
 
-# --- YENİ: KRİPTOLU "GÜVENLİ BİLET" SİSTEMİ (BENİ HATIRLA) ---
+# --- OTOMATİK GİRİŞ (CİHAZDAN TANIMA) ---
 if not st.session_state.giris_yapildi:
-    if "session" in st.query_params:
+    kayitli_mail = cookies.get('edavm_user_mail')
+    if kayitli_mail:
         try:
-            # URL'deki şifreli bileti çözüyoruz
-            kayitli_mail = base64.b64decode(st.query_params["session"]).decode('utf-8')
             res = supabase.table('kullanicilar').select('*').eq('email', kayitli_mail).execute()
             if res.data and res.data[0]["durum"] == "Onaylandı":
                 user = res.data[0]
@@ -119,8 +126,10 @@ if not st.session_state.giris_yapildi:
                     "kullanici_mail": user["email"],
                     "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
                 })
-        except:
-            pass
+                st.rerun() # Kişiyi tanıdıysa ana ekrana atla
+            else:
+                cookies.remove('edavm_user_mail') # Hesap yasaklandıysa cihazdan sil
+        except: pass
 
 # ==========================================
 # GİRİŞ / KAYIT / ŞİFRE SIFIRLAMA / İŞ BAŞVURUSU
@@ -135,30 +144,38 @@ if not st.session_state.giris_yapildi:
         sekme = st.radio("İşlem Seçiniz", ["🔑 Giriş Yap", "📝 Kayıt Ol", "❓ Şifremi Unuttum", "👔 İş Başvurusu"], horizontal=True)
 
         if sekme == "🔑 Giriş Yap":
-            email_in = st.text_input("E-posta").strip().lower()
-            sifre_in = st.text_input("Şifre", type="password")
-            beni_hatirla = st.checkbox("Beni Hatırla", value=True)
             
-            if st.button("Sisteme Gir"):
-                res = supabase.table('kullanicilar').select('*').eq('email', email_in).eq('sifre', sifre_in).execute()
-                if res.data:
-                    user = res.data[0]
-                    if user["durum"] == "Onaylandı":
-                        # Seçiliyse maili kriptolayıp URL'ye güvenli bilet olarak asıyoruz
-                        if beni_hatirla:
-                            token = base64.b64encode(user["email"].encode('utf-8')).decode('utf-8')
-                            st.query_params["session"] = token
-                            
-                        st.session_state.update({
-                            "giris_yapildi": True, 
-                            "kullanici_tipi": user["rol"], 
-                            "kullanici_adi": user["isim"], 
-                            "kullanici_mail": user["email"],
-                            "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
-                        })
-                        st.rerun()
-                    else: st.warning("⏳ Hesabınız onay bekliyor.")
-                else: st.error("❌ E-posta veya şifre hatalı.")
+            # --- 1. ADIM: ŞİFREYİ DOĞRULA VE CİHAZA YAZ ---
+            if not st.session_state.get("giris_adim_2"):
+                email_in = st.text_input("E-posta").strip().lower()
+                sifre_in = st.text_input("Şifre", type="password")
+                
+                if st.button("Sisteme Gir"):
+                    res = supabase.table('kullanicilar').select('*').eq('email', email_in).eq('sifre', sifre_in).execute()
+                    if res.data:
+                        user = res.data[0]
+                        if user["durum"] == "Onaylandı":
+                            # Şifreyi cihaza kazıyoruz (30 Günlük Ömür)
+                            cookies.set('edavm_user_mail', user["email"], max_age=30*24*60*60)
+                            st.session_state.user_temp = user
+                            st.session_state.giris_adim_2 = True
+                        else: st.warning("⏳ Hesabınız onay bekliyor.")
+                    else: st.error("❌ E-posta veya şifre hatalı.")
+
+            # --- 2. ADIM: CİHAZ KAYDINI TAMAMLA VE İÇERİ GİR ---
+            if st.session_state.get("giris_adim_2"):
+                st.success("✅ Güvenlik onayı alındı! Oturumunuz bu cihaza kaydedildi.")
+                if st.button("👉 AVM Paneline Geç 🚀", type="primary"):
+                    user = st.session_state.user_temp
+                    st.session_state.update({
+                        "giris_yapildi": True, 
+                        "kullanici_tipi": user["rol"], 
+                        "kullanici_adi": user["isim"], 
+                        "kullanici_mail": user["email"],
+                        "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
+                    })
+                    st.session_state.giris_adim_2 = False # Eski haline döndür
+                    st.rerun()
 
         elif sekme == "📝 Kayıt Ol":
             with st.form("kayit"):
@@ -235,8 +252,10 @@ else:
             
         sayfa = st.radio("Menü", menu_secenekleri)
         st.divider()
+        
+        # --- ÇIKIŞ YAP (HAFIZADAN SİL) ---
         if st.button("🚪 Çıkış Yap", use_container_width=True):
-            st.query_params.clear() # Çıkış yaptığında güvenli bileti yırtıp atıyoruz
+            cookies.remove('edavm_user_mail') # Cihazın hafızasından tamamen unut
             st.session_state.giris_yapildi = False
             st.rerun()
 
