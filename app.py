@@ -480,12 +480,28 @@ if st.session_state.giris_yapildi:
         
         with tab1:
             with st.form("personel_formu", clear_on_submit=True):
-                # İZİN GÜNLERİNİN TESPİTİ
+                # İZİN / ÇALIŞMA GÜNÜ TESPİTİ + VARDİYA SEÇİMİ
+                karma_secimler = []
+
                 if st.session_state.calisma_tipi == "Part-Time":
-                    st.info("ℹ️ Part-Time personel olarak sadece **ÇALIŞACAĞINIZ** günleri seçiniz.")
+                    st.info("ℹ️ Part-Time personel olarak önce **çalışacağınız günleri**, sonra her gün için **vardiya saatinizi** seçiniz.")
                     secilen_gunler = st.multiselect("✅ ÇALIŞACAĞINIZ Günleri Seçiniz:", gunler)
                     calisilan_gunler = secilen_gunler
                     izin_listesi = [g for g in gunler if g not in secilen_gunler]
+
+                    if calisilan_gunler:
+                        st.markdown("**Seçtiğiniz günler için vardiya tercihiniz:**")
+                        st.caption("Part-Time personelde her seçilen gün ayrı ayrı Sabahçı / Akşamcı / Tam Gün olarak belirlenir.")
+                        c1, c2 = st.columns(2)
+                        for i, g in enumerate(calisilan_gunler):
+                            with (c1 if i % 2 == 0 else c2):
+                                sec = st.selectbox(f"{g} vardiyası:", vardiya_secenekleri, key=f"pt_vardiya_{g}")
+                                shift_kisa = "Sabahçı" if "Sabahçı" in sec else ("Akşamcı" if "Akşamcı" in sec else "Tam Gün")
+                                karma_secimler.append(f"{g}: {shift_kisa}")
+                        haftalik_shift = "Karma | " + ", ".join(karma_secimler)
+                    else:
+                        haftalik_shift = "Karma | Seçim Yok"
+
                 else:
                     st.info("ℹ️ İzin kullanmak istemiyorsanız ilgili seçeneği seçebilirsiniz.")
                     izin_secenekleri = ["❌ İzin İstemiyorum (Tam Hafta Çalışacağım)"] + gunler
@@ -497,40 +513,36 @@ if st.session_state.giris_yapildi:
                         calisilan_gunler = [g for g in gunler if g != secilen_gun]
                         izin_listesi = [secilen_gun]
 
-                # YENİ: VARDİYA TİPİ SEÇİMİ (SABİT / KARMA)
-                vardiya_tipi = st.radio("Çalışma Düzeniniz:", ["Sabit Vardiya (Tüm Hafta Aynı)", "Karma Vardiya (Günlere Göre Değişken)"])
-                
-                # Karma vardiya için verileri tutacak liste
-                karma_secimler = []
-                
-                if vardiya_tipi == "Sabit Vardiya (Tüm Hafta Aynı)":
-                    haftalik_shift = st.radio("Vardiyanız:", vardiya_secenekleri)
-                else:
-                    st.write("Aşağıdan her gün için vardiyanızı ayarlayabilirsiniz:")
-                    st.caption("Not: Pazar günleri mağaza kuralı gereği tablolara her zaman 'Tam Güç' olarak yansıtılmaktadır.")
-                    c1, c2 = st.columns(2)
-                    for i, g in enumerate(calisilan_gunler):
-                        with (c1 if i % 2 == 0 else c2):
-                            sec = st.selectbox(f"{g}:", vardiya_secenekleri, key=f"karma_{g}")
-                            shift_kisa = "Sabahçı" if "Sabahçı" in sec else ("Akşamcı" if "Akşamcı" in sec else "Tam Gün")
-                            karma_secimler.append(f"{g}: {shift_kisa}")
-                    
-                    if karma_secimler:
-                        haftalik_shift = "Karma | " + ", ".join(karma_secimler)
+                    vardiya_tipi = st.radio("Çalışma Düzeniniz:", ["Sabit Vardiya (Tüm Hafta Aynı)", "Karma Vardiya (Günlere Göre Değişken)"])
+
+                    if vardiya_tipi == "Sabit Vardiya (Tüm Hafta Aynı)":
+                        haftalik_shift = st.radio("Vardiyanız:", vardiya_secenekleri)
                     else:
-                        haftalik_shift = "Karma | Seçim Yok"
+                        st.write("Aşağıdan her çalışma günü için vardiyanızı ayarlayabilirsiniz:")
+                        st.caption("Not: Pazar günleri mağaza kuralı gereği tablolara her zaman 'Tam Güç' olarak yansıtılmaktadır.")
+                        c1, c2 = st.columns(2)
+                        for i, g in enumerate(calisilan_gunler):
+                            with (c1 if i % 2 == 0 else c2):
+                                sec = st.selectbox(f"{g} vardiyası:", vardiya_secenekleri, key=f"karma_{g}")
+                                shift_kisa = "Sabahçı" if "Sabahçı" in sec else ("Akşamcı" if "Akşamcı" in sec else "Tam Gün")
+                                karma_secimler.append(f"{g}: {shift_kisa}")
+
+                        if karma_secimler:
+                            haftalik_shift = "Karma | " + ", ".join(karma_secimler)
+                        else:
+                            haftalik_shift = "Karma | Seçim Yok"
 
                 neden = st.text_area("Notunuz (İsteğe Bağlı):")
-                
+
                 if st.form_submit_button("Planımı Gönder"):
                     if st.session_state.calisma_tipi == "Part-Time" and len(secilen_gunler) == 0:
                         st.error("❌ Hata: Lütfen çalışacağınız günleri seçiniz.")
                     else:
                         izin_str = ", ".join(izin_listesi) if len(izin_listesi) > 0 else "İzin Yok"
                         benzersiz_kimlik = f"{st.session_state.kullanici_adi} ({st.session_state.kullanici_mail})"
-                        
+
                         yeni_talep = {"personel": benzersiz_kimlik, "izin_gunu": izin_str, "haftalik_vardiya": haftalik_shift, "neden": neden, "durum": "Beklemede"}
-                        
+
                         supabase.table('talepler').delete().eq('personel', benzersiz_kimlik).execute()
                         supabase.table('talepler').insert(yeni_talep).execute()
                         st.success("Talebiniz veritabanına işlendi ve yönetime iletildi.")
