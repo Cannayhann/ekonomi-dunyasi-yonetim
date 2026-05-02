@@ -89,9 +89,11 @@ def style_status(v):
     else: c = ""
     return f'background-color: {c}; color: white' if c else ''
 
+# --- CANLI TASLAK ---
 def get_taslak_df():
     df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
-    aktifler = df_k[df_k["Durum"] == "Onaylandı"]["Isim"].tolist()
+    # YENİ KURAL: Rolü Yönetici olanları listeye alma!
+    aktifler = df_k[(df_k["Durum"] == "Onaylandı") & (df_k["Rol"] != "Yonetici")]["Isim"].tolist()
     if not aktifler: return pd.DataFrame()
     
     taslak = pd.DataFrame(index=aktifler, columns=gunler)
@@ -328,7 +330,6 @@ else:
             st.subheader("Aktif Kullanıcılar")
             aktifler = df_k[df_k["Durum"] == "Onaylandı"]
             for idx, row in aktifler.iterrows():
-                # YENİ: Yönetici direkt olarak kullanıcının çalışma tipini panelden güncelleyebilir
                 mevcut_tip = row.get("CalismaTipi", "Tam Zamanlı")
                 with st.expander(f"⚙️ {row['Isim']} ({row['Rol']} - {mevcut_tip})"):
                     st.write(f"Mail: {row['Email']} | Tel: {row['Telefon']} | Şifre: {row['Sifre']}")
@@ -450,7 +451,9 @@ else:
 
         with tab_m:
             st.subheader("🛠️ Manuel Vardiya Atama")
-            aktif_personel_listesi = df_k[df_k["Durum"] == "Onaylandı"]["Isim"].tolist()
+            # YENİ KURAL: Manuel vardiya atamada Yöneticileri listeleme
+            aktif_personel_listesi = df_k[(df_k["Durum"] == "Onaylandı") & (df_k["Rol"] != "Yonetici")]["Isim"].tolist()
+            
             if len(aktif_personel_listesi) > 0:
                 with st.form("manuel_atama"):
                     secilen_kisi = st.selectbox("Personel:", aktif_personel_listesi)
@@ -464,6 +467,8 @@ else:
                         df_t = pd.concat([df_t, pd.DataFrame([yeni_manuel])], ignore_index=True)
                         df_t.to_csv(TALEPLER_FILE, index=False)
                         st.success("Atandı!"); st.rerun()
+            else:
+                st.warning("Sistemde aktif personel bulunmuyor.")
 
         with tab_y:
             st.subheader("Haftalık Operasyon Kontrolü")
