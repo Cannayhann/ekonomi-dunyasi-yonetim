@@ -396,6 +396,112 @@ def operasyon_ozetini_goster(df: pd.DataFrame, baslik="📌 Günlük Personel Sa
     else:
         st.success("Şu an belirgin bir vardiya çakışması veya eksikliği görünmüyor.")
 
+
+# --- YAYIN ÖNCESİ KALİTE KONTROLÜ VE HAFTALIK ARŞİV ---
+def hafta_kodu_uret():
+    """Yayınlanan liste için okunabilir hafta kodu üretir."""
+    now = datetime.now()
+    iso_year, iso_week, _ = now.isocalendar()
+    return f"{iso_year}-W{iso_week:02d}"
+
+def kalite_kontrol_ozeti(df: pd.DataFrame):
+    """Yayın öncesi kalite kontrol metriklerini hesaplar."""
+    if df is None or df.empty:
+        return {
+            "uygun": False,
+            "mesaj": "Onaylanmış plan yok.",
+            "ozet_df": pd.DataFrame(),
+            "uyarilar": ["Yayınlanacak onaylı vardiya planı bulunmuyor."],
+        }
+
+    ozet_df, uyarilar = vardiya_sayaclarini_hesapla(df)
+    toplam_personel = len(df)
+    belirsiz_toplam = 0
+    for g in gunler:
+        belirsiz_toplam += int(df[g].astype(str).str.contains("⏳", regex=False).sum())
+
+    kritik_uyarilar = []
+    if belirsiz_toplam > 0:
+        kritik_uyarilar.append(f"Toplam {belirsiz_toplam} belirsiz hücre var.")
+
+    for _, row in ozet_df.iterrows():
+        gun = row["Gün"]
+        if gun != "Pazar":
+            if int(row["Toplam Çalışan"]) == 0:
+                kritik_uyarilar.append(f"{gun}: Hiç çalışan yok.")
+            if int(row["Sabahçı"]) == 0:
+                kritik_uyarilar.append(f"{gun}: Sabahçı personel yok.")
+            if int(row["Akşamcı"]) == 0:
+                kritik_uyarilar.append(f"{gun}: Akşamcı personel yok.")
+
+    tum_uyarilar = list(dict.fromkeys(kritik_uyarilar + uyarilar))
+    return {
+        "uygun": len(tum_uyarilar) == 0,
+        "mesaj": "Yayın için belirgin risk görünmüyor." if len(tum_uyarilar) == 0 else "Yayın öncesi kontrol edilmesi gereken uyarılar var.",
+        "ozet_df": ozet_df,
+        "uyarilar": tum_uyarilar,
+        "toplam_personel": toplam_personel,
+    }
+
+def yayin_oncesi_kalite_kontrol_goster(df: pd.DataFrame):
+    """Yayınlama ekranında karar vermeyi kolaylaştıran kalite kontrol paneli."""
+    kontrol = kalite_kontrol_ozeti(df)
+    st.subheader("✅ Yayın Öncesi Kalite Kontrol")
+
+    if df is None or df.empty:
+        st.error("Yayınlanacak onaylı plan bulunmuyor.")
+        return kontrol
+
+    toplam_personel = kontrol.get("toplam_personel", len(df))
+    hafta_kodu = hafta_kodu_uret()
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Hafta Kodu", hafta_kodu)
+    m2.metric("Toplam Personel", toplam_personel)
+    m3.metric("Uyarı Sayısı", len(kontrol["uyarilar"]))
+
+    st.dataframe(kontrol["ozet_df"], use_container_width=True, hide_index=True)
+
+    if kontrol["uyarilar"]:
+        st.warning(kontrol["mesaj"])
+        with st.expander(f"⚠️ Yayın öncesi uyarılar ({len(kontrol['uyarilar'])})", expanded=True):
+            for u in kontrol["uyarilar"]:
+                st.warning(u)
+    else:
+        st.success(kontrol["mesaj"])
+
+    return kontrol
+
+def haftalik_arsive_kaydet(df: pd.DataFrame, hafta_kodu: str):
+    """Kesinleşen listeyi ayrı bir arşiv tablosuna snapshot olarak kaydeder.
+
+    Gerekli Supabase tablosu önerisi: vardiya_arsiv
+    Kolonlar: hafta_kodu, yayin_tarihi, yayinlayan, personel, Pazartesi, Salı, Çarşamba, Perşembe, Cuma, Cumartesi, Pazar
+    """
+    if df is None or df.empty:
+        return False, "Arşivlenecek veri yok."
+
+    yayin_tarihi = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    yayinlayan = st.session_state.get("kullanici_mail", "")
+    kayitlar = []
+    for _, row in df.iterrows():
+        arsiv_kaydi = {
+            "hafta_kodu": hafta_kodu,
+            "yayin_tarihi": yayin_tarihi,
+            "yayinlayan": yayinlayan,
+            "personel": row["Personel"],
+        }
+        for g in gunler:
+            arsiv_kaydi[g] = row[g]
+        kayitlar.append(arsiv_kaydi)
+
+    try:
+        # Aynı hafta tekrar yayınlanırsa önce eski snapshot temizlenir.
+        supabase.table('vardiya_arsiv').delete().eq('hafta_kodu', hafta_kodu).execute()
+        supabase.table('vardiya_arsiv').insert(kayitlar).execute()
+        return True, f"{hafta_kodu} haftası arşive kaydedildi."
+    except Exception as exc:
+        return False, f"Arşiv kaydı yapılamadı. Supabase'de 'vardiya_arsiv' tablosu yoksa oluşturmanız gerekir. Detay: {exc}"
+
 # ==========================================
 # SİSTEM HAFIZASI (ÇEREZ) YÖNETİMİ
 # ==========================================
@@ -917,32 +1023,69 @@ if st.session_state.giris_yapildi:
         with tab_y:
             st.subheader("Haftalık Operasyon Kontrolü")
             taslak_df_yayin_kontrol = get_taslak_df()
-            operasyon_ozetini_goster(taslak_df_yayin_kontrol, baslik="📌 Yayın Öncesi Günlük Kontrol")
+
+            kontrol = yayin_oncesi_kalite_kontrol_goster(taslak_df_yayin_kontrol)
             st.divider()
 
-            if st.button("🔄 Yeni Haftaya Başla (Sıfırla)"):
-                supabase.table('ayarlar').update({'deger': 'GIZLI'}).eq('ayar_adi', 'yayin_durumu').execute()
-                supabase.table('talepler').delete().neq('id', 0).execute() 
-                st.success("Veritabanı sıfırlandı. Tertemiz bir haftaya başlandı."); st.rerun()
-            
-            st.divider()
+            st.subheader("🚀 Yayınlama Kararı")
+            hafta_kodu = hafta_kodu_uret()
+            st.caption(f"Bu yayın {hafta_kodu} hafta koduyla arşivlenmeye çalışılacaktır.")
+
+            onay_kutusu = st.checkbox(
+                "Bu haftalık listeyi kontrol ettim ve yayınlamayı onaylıyorum.",
+                key="yayin_kalite_onayi"
+            )
+            uyarilara_ragmen = False
+            if kontrol.get("uyarilar"):
+                uyarilara_ragmen = st.checkbox(
+                    "Uyarıları gördüm; yine de listeyi yayınlamak istiyorum.",
+                    key="yayin_uyari_onayi"
+                )
+
+            yayin_engelli = (
+                taslak_df_yayin_kontrol is None
+                or taslak_df_yayin_kontrol.empty
+                or not onay_kutusu
+                or (bool(kontrol.get("uyarilar")) and not uyarilara_ragmen)
+            )
+
+            if yayin_engelli:
+                st.info("Yayın butonu aktifleşmesi için kalite kontrol onaylarını tamamlayın.")
+
             col_yayin, col_mail = st.columns(2)
             with col_yayin:
-                if st.button("🚀 Listeyi Kesinleştir ve Yayınla"):
+                if st.button("🚀 Listeyi Kesinleştir, Arşivle ve Yayınla", disabled=yayin_engelli):
                     taslak_df = get_taslak_df()
                     if not taslak_df.empty:
+                        arsiv_ok, arsiv_mesaj = haftalik_arsive_kaydet(taslak_df, hafta_kodu)
+                        if arsiv_ok:
+                            st.success(arsiv_mesaj)
+                        else:
+                            st.warning(arsiv_mesaj)
+
                         supabase.table('vardiyalar').delete().neq('personel', 'x').execute()
                         for _, row in taslak_df.iterrows():
                             v_data = {"personel": row["Personel"]}
-                            for g in gunler: v_data[g] = row[g]
+                            for g in gunler:
+                                v_data[g] = row[g]
                             supabase.table('vardiyalar').insert(v_data).execute()
                         supabase.table('ayarlar').update({'deger': 'YAYINLANDI'}).eq('ayar_adi', 'yayin_durumu').execute()
                         supabase.table('talepler').delete().neq('id', 0).execute()
                         st.success("Liste Bulut'a kaydedildi ve yayınlandı!"); st.rerun()
-                    else: st.warning("Onaylı plan yok.")
+                    else:
+                        st.warning("Onaylı plan yok.")
             with col_mail:
                 if st.button("📧 Yayın Maili At"):
                     st.success("Mail sistemi hazır.")
+
+            st.divider()
+            st.subheader("🔄 Yeni Hafta")
+            st.warning("Bu işlem yayın durumunu gizliye alır ve mevcut talepleri temizler. Kesin liste ve arşiv kayıtları silinmez.")
+            sifirlama_onay = st.checkbox("Yeni haftaya başlamak için talepleri temizlemeyi onaylıyorum.", key="yeni_hafta_onay")
+            if st.button("🔄 Yeni Haftaya Başla (Sıfırla)", disabled=not sifirlama_onay):
+                supabase.table('ayarlar').update({'deger': 'GIZLI'}).eq('ayar_adi', 'yayin_durumu').execute()
+                supabase.table('talepler').delete().neq('id', 0).execute() 
+                st.success("Veritabanı sıfırlandı. Yeni haftaya başlandı."); st.rerun()
 
         with tab_b:
             st.subheader("İş Başvuruları")
