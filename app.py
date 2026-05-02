@@ -397,7 +397,7 @@ if st.session_state.giris_yapildi:
                         c1, c2 = st.columns(2)
                         if c1.button("Onayla", key=f"kon_{row['email']}"):
                             supabase.table('kullanicilar').update({'durum': 'Onaylandı'}).eq('email', row['email']).execute()
-                            onay_mesaji = f"Merhaba {row['isim']},\n\nED-AVM portal hesabınız yönetim tarafından onaylanmıştır. Aşağıdaki linkten giriş yapabilirsiniz:\nhttps://99am.streamlit.app\n\nİyi çalışmalar."
+                            onay_mesaji = f"Merhaba {row['isim']},\n\nED-AVM portal hesabınız yönetim tarafından onaylanmıştır. Aşağıdaki linkten giriş yapabilirsiniz:\nhttps://ekonomi-dunyasi-yonetim-msu7zf86qlczbai2sb99am.streamlit.app\n\nİyi çalışmalar."
                             mail_gonder(row['email'], "ED-AVM | Hesabınız Onaylandı", onay_mesaji)
                             st.rerun()
                         if c2.button("Reddet", key=f"kred_{row['email']}"):
