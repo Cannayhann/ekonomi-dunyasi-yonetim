@@ -18,14 +18,15 @@ PROFILE_DIR = "profil_fotograflari"
 gunler = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 os.makedirs(PROFILE_DIR, exist_ok=True)
 
-# --- VERİTABANI KENDİNİ TAMİR ETME (GÜNCELLENDİ) ---
+# --- VERİTABANI KENDİNİ TAMİR ETME ---
 kullanici_sutunlari = ["Isim", "Email", "Sifre", "Telefon", "Durum", "Rol"]
 
 if not os.path.exists(KULLANICI_FILE):
     admin_data = {"Isim": "Yönetim", "Email": "admin@edavm.com", "Sifre": "ayhanlar2026", "Telefon": "05000000000", "Durum": "Onaylandı", "Rol": "Yonetici"}
     pd.DataFrame([admin_data], columns=kullanici_sutunlari).to_csv(KULLANICI_FILE, index=False)
 else:
-    df_k = pd.read_csv(KULLANICI_FILE)
+    # HATA ÇÖZÜMÜ: dtype=str eklendi. Her şey metin olarak okunacak.
+    df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
     guncellendi_mi = False
     
     if "Telefon" not in df_k.columns:
@@ -35,7 +36,6 @@ else:
         df_k["Rol"] = "Personel"
         guncellendi_mi = True
         
-    # ADMİN KONTROLÜ (Şifreyi ezmeden sadece yetkiyi koruma)
     admin_mask = df_k["Email"] == "admin@edavm.com"
     if admin_mask.any():
         if df_k.loc[admin_mask, "Rol"].iloc[0] != "Yonetici":
@@ -100,7 +100,7 @@ if not st.session_state.giris_yapildi:
             email_in = st.text_input("E-posta").strip().lower()
             sifre_in = st.text_input("Şifre", type="password")
             if st.button("Sisteme Gir"):
-                df_k = pd.read_csv(KULLANICI_FILE)
+                df_k = pd.read_csv(KULLANICI_FILE, dtype=str) # HATA ÇÖZÜMÜ
                 user = df_k[(df_k["Email"] == email_in) & (df_k["Sifre"] == str(sifre_in))]
                 if not user.empty:
                     if user.iloc[0]["Durum"] == "Onaylandı":
@@ -123,13 +123,13 @@ if not st.session_state.giris_yapildi:
                 mail = st.text_input("E-posta Adresiniz").strip().lower()
                 sifre = st.text_input("Şifre Belirleyiniz", type="password")
                 if st.form_submit_button("Kayıt Talebi Gönder"):
-                    df_k = pd.read_csv(KULLANICI_FILE)
+                    df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
                     if mail in df_k["Email"].values:
                         st.error("Bu e-posta zaten sistemde kayıtlı.")
                     elif isim == "" or mail == "" or sifre == "":
                         st.warning("Lütfen zorunlu alanları doldurun.")
                     else:
-                        yeni = {"Isim": isim.strip().title(), "Email": mail, "Sifre": sifre, "Telefon": tel, "Durum": "Beklemede", "Rol": "Personel"}
+                        yeni = {"Isim": str(isim.strip().title()), "Email": str(mail), "Sifre": str(sifre), "Telefon": str(tel), "Durum": "Beklemede", "Rol": "Personel"}
                         pd.concat([df_k, pd.DataFrame([yeni])]).to_csv(KULLANICI_FILE, index=False)
                         mail_gonder(mail, "ED-AVM | Kayıt Talebiniz Alındı", f"Merhaba {isim},\n\nKayıt talebiniz alındı. Yönetim onayından sonra giriş yapabilirsiniz.")
                         st.success("Kayıt başarılı! Bilgilendirme maili gönderildi.")
@@ -138,7 +138,7 @@ if not st.session_state.giris_yapildi:
             if st.session_state.reset_kod == "":
                 mail_res = st.text_input("Sisteme Kayıtlı E-posta Adresiniz:")
                 if st.button("Doğrulama Kodu Gönder"):
-                    df_k = pd.read_csv(KULLANICI_FILE)
+                    df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
                     if mail_res.strip().lower() in df_k["Email"].values:
                         kod = kod_uret()
                         st.session_state.reset_kod = kod
@@ -153,8 +153,8 @@ if not st.session_state.giris_yapildi:
                 yeni_sifre = st.text_input("Yeni Şifreniz:", type="password")
                 if st.button("Şifreyi Güncelle"):
                     if kod_in == st.session_state.reset_kod:
-                        df_k = pd.read_csv(KULLANICI_FILE)
-                        df_k.loc[df_k["Email"] == st.session_state.reset_mail, "Sifre"] = yeni_sifre
+                        df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
+                        df_k.loc[df_k["Email"] == st.session_state.reset_mail, "Sifre"] = str(yeni_sifre)
                         df_k.to_csv(KULLANICI_FILE, index=False)
                         st.success("Şifreniz başarıyla güncellendi! Yeniden giriş yapabilirsiniz.")
                         st.session_state.reset_kod = ""
@@ -189,10 +189,10 @@ else:
 
     with open(YAYIN_FILE, "r") as f: yayin_durumu = f.read().strip()
 
-    # --- 1. SAYFA: PROFİLİM (HATANIN ÇÖZÜLDÜĞÜ YER) ---
+    # --- 1. SAYFA: PROFİLİM ---
     if sayfa == "Profilim":
         st.header("👤 Profilimi Düzenle")
-        df_k = pd.read_csv(KULLANICI_FILE)
+        df_k = pd.read_csv(KULLANICI_FILE, dtype=str) # HATA ÇÖZÜMÜ
         u_data = df_k[df_k["Email"] == st.session_state.kullanici_mail].iloc[0]
         
         col_foto, col_bilgi = st.columns([1, 2])
@@ -209,19 +209,19 @@ else:
 
         with col_bilgi:
             st.subheader("Kişisel Bilgiler")
-            yeni_isim = st.text_input("Ad Soyad:", value=u_data["Isim"])
+            yeni_isim = st.text_input("Ad Soyad:", value=str(u_data["Isim"]))
             yeni_tel = st.text_input("Telefon Numarası:", value=str(u_data["Telefon"]) if pd.notna(u_data["Telefon"]) else "")
-            yeni_sifre = st.text_input("Şifre (Değiştirmek istemiyorsanız aynı bırakın):", value=u_data["Sifre"], type="password")
+            yeni_sifre = st.text_input("Şifre (Değiştirmek istemiyorsanız aynı bırakın):", value=str(u_data["Sifre"]), type="password")
             
             if st.button("Bilgilerimi Kaydet"):
                 mask = df_k["Email"] == st.session_state.kullanici_mail
-                # Veriler artık tek tek güncelleniyor, TypeError vermeyecek.
-                df_k.loc[mask, "Isim"] = yeni_isim
-                df_k.loc[mask, "Telefon"] = yeni_tel
-                df_k.loc[mask, "Sifre"] = yeni_sifre
+                # Tüm değerler zorunlu olarak metne (string) çevriliyor.
+                df_k.loc[mask, "Isim"] = str(yeni_isim)
+                df_k.loc[mask, "Telefon"] = str(yeni_tel)
+                df_k.loc[mask, "Sifre"] = str(yeni_sifre)
                 df_k.to_csv(KULLANICI_FILE, index=False)
                 
-                st.session_state.kullanici_adi = yeni_isim
+                st.session_state.kullanici_adi = str(yeni_isim)
                 st.success("Profil bilgileriniz başarıyla güncellendi!")
                 st.rerun()
 
@@ -239,14 +239,14 @@ else:
                 
                 if st.form_submit_button("Planımı Gönder"):
                     yeni = {"Personel": st.session_state.kullanici_adi, "İzin Günü": izin_gunu, "Haftalık Vardiya": haftalik_shift, "Neden": neden, "Durum": "Beklemede"}
-                    df_t = pd.read_csv(TALEPLER_FILE)
+                    df_t = pd.read_csv(TALEPLER_FILE, dtype=str)
                     pd.concat([df_t, pd.DataFrame([yeni])]).to_csv(TALEPLER_FILE, index=False)
                     st.success("Talebiniz yönetime iletildi.")
                     
         with tab2:
             if yayin_durumu == "YAYINLANDI":
                 if os.path.exists(VARDIYA_FILE):
-                    df_v = pd.read_csv(VARDIYA_FILE)
+                    df_v = pd.read_csv(VARDIYA_FILE, dtype=str)
                     def style_status(v):
                         val_str = str(v)
                         c = "#ff4b4b" if "🔴" in val_str else "#1c83e1" if "A " in val_str else "#28a745" if "S " in val_str else "#4CAF50"
@@ -261,7 +261,7 @@ else:
         tab_k, tab_v = st.tabs(["👥 Kullanıcı Yönetimi", "📋 Vardiya Onay & Yayın"])
         
         with tab_k:
-            df_k = pd.read_csv(KULLANICI_FILE)
+            df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
             bekleyenler = df_k[df_k["Durum"] == "Beklemede"]
             st.subheader("Yeni Kayıt Onayları")
             if len(bekleyenler) > 0:
@@ -300,7 +300,7 @@ else:
                 st.rerun()
 
             st.divider()
-            df_t = pd.read_csv(TALEPLER_FILE)
+            df_t = pd.read_csv(TALEPLER_FILE, dtype=str)
             bekleyen_talepler = df_t[df_t["Durum"] == "Beklemede"]
             
             st.subheader("Gelen Vardiya Talepleri")
