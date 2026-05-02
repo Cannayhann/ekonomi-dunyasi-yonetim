@@ -5,6 +5,7 @@ import smtplib
 import random
 import string
 from email.mime.text import MIMEText
+from datetime import datetime
 
 # 1. SİSTEM AYARLARI
 st.set_page_config(page_title="ED-AVM Yönetim", layout="wide")
@@ -13,6 +14,7 @@ TALEPLER_FILE = "talepler.csv"
 VARDIYA_FILE = "vardiya_duzeni.csv"
 YAYIN_FILE = "yayin_durumu.txt"
 KULLANICI_FILE = "kullanicilar.csv"
+BASVURU_FILE = "basvurular.csv" # YENİ: Başvuruların tutulacağı dosya
 PROFILE_DIR = "profil_fotograflari"
 
 gunler = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
@@ -58,6 +60,8 @@ if not os.path.exists(VARDIYA_FILE):
     pd.DataFrame(columns=["Personel"] + gunler).to_csv(VARDIYA_FILE, index=False)
 if not os.path.exists(YAYIN_FILE):
     with open(YAYIN_FILE, "w") as f: f.write("GIZLI")
+if not os.path.exists(BASVURU_FILE):
+    pd.DataFrame(columns=["Ad Soyad", "Telefon", "E-posta", "Pozisyon", "Tecrübe", "Durum", "Tarih"]).to_csv(BASVURU_FILE, index=False)
 
 # --- MAİL VE KOD FONKSİYONLARI ---
 def mail_gonder(alici_mail, konu, mesaj_metni):
@@ -83,7 +87,7 @@ if "giris_yapildi" not in st.session_state:
     st.session_state.update({"giris_yapildi": False, "kullanici_tipi": "", "kullanici_adi": "", "kullanici_mail": "", "reset_kod": "", "reset_mail": ""})
 
 # ==========================================
-# GİRİŞ / KAYIT / ŞİFRE SIFIRLAMA EKRANI
+# GİRİŞ / KAYIT / ŞİFRE SIFIRLAMA / İŞ BAŞVURUSU
 # ==========================================
 if not st.session_state.giris_yapildi:
     col_logo, col_baslik = st.columns([1, 8])
@@ -91,9 +95,9 @@ if not st.session_state.giris_yapildi:
         st.title("🏢 Ekonomi Dünyası AVM Portalı")
     st.markdown("---")
     
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1, 4, 1])
     with col2:
-        sekme = st.radio("İşlem Seçiniz", ["🔑 Giriş Yap", "📝 Kayıt Ol", "❓ Şifremi Unuttum"], horizontal=True)
+        sekme = st.radio("İşlem Seçiniz", ["🔑 Giriş Yap", "📝 Kayıt Ol", "❓ Şifremi Unuttum", "👔 İş Başvurusu"], horizontal=True)
 
         if sekme == "🔑 Giriş Yap":
             email_in = st.text_input("E-posta").strip().lower()
@@ -103,12 +107,7 @@ if not st.session_state.giris_yapildi:
                 user = df_k[(df_k["Email"] == email_in) & (df_k["Sifre"] == str(sifre_in))]
                 if not user.empty:
                     if user.iloc[0]["Durum"] == "Onaylandı":
-                        st.session_state.update({
-                            "giris_yapildi": True, 
-                            "kullanici_tipi": user.iloc[0]["Rol"], 
-                            "kullanici_adi": user.iloc[0]["Isim"], 
-                            "kullanici_mail": email_in
-                        })
+                        st.session_state.update({"giris_yapildi": True, "kullanici_tipi": user.iloc[0]["Rol"], "kullanici_adi": user.iloc[0]["Isim"], "kullanici_mail": email_in})
                         st.rerun()
                     else:
                         st.warning("⏳ Hesabınız onay bekliyor.")
@@ -117,6 +116,7 @@ if not st.session_state.giris_yapildi:
 
         elif sekme == "📝 Kayıt Ol":
             with st.form("kayit"):
+                st.info("Bu alan halihazırda işe alınmış personeller içindir.")
                 isim = st.text_input("Adınız Soyadınız")
                 tel = st.text_input("Telefon Numaranız")
                 mail = st.text_input("E-posta Adresiniz").strip().lower()
@@ -160,6 +160,26 @@ if not st.session_state.giris_yapildi:
                     else:
                         st.error("Girdiğiniz kod hatalı.")
 
+        # YENİ EKLENEN: İŞ BAŞVURUSU EKRANI
+        elif sekme == "👔 İş Başvurusu":
+            st.info("Ekonomi Dünyası AVM ekibine katılmak için aşağıdaki formu doldurabilirsiniz. Özgeçmişiniz yönetimimiz tarafından incelenecektir.")
+            with st.form("is_basvurusu"):
+                b_isim = st.text_input("Adınız Soyadınız")
+                b_tel = st.text_input("Telefon Numaranız")
+                b_mail = st.text_input("E-posta Adresiniz")
+                b_pozisyon = st.selectbox("Başvurulan Pozisyon", ["Satış Danışmanı", "Kasa Görevlisi", "Depo / Lojistik", "E-Ticaret Sorumlusu"])
+                b_tecrube = st.text_area("İş Tecrübeleriniz ve Eklemek İstedikleriniz", placeholder="Daha önceki iş deneyimlerinizi kısaca yazınız...")
+                
+                if st.form_submit_button("Başvurumu İlet"):
+                    if b_isim == "" or b_tel == "":
+                        st.warning("Lütfen isim ve telefon numarası alanlarını doldurunuz.")
+                    else:
+                        tarih = datetime.now().strftime("%Y-%m-%d %H:%M")
+                        yeni_basvuru = {"Ad Soyad": str(b_isim.strip().title()), "Telefon": str(b_tel), "E-posta": str(b_mail), "Pozisyon": str(b_pozisyon), "Tecrübe": str(b_tecrube), "Durum": "İnceleniyor", "Tarih": tarih}
+                        df_b = pd.read_csv(BASVURU_FILE, dtype=str)
+                        pd.concat([df_b, pd.DataFrame([yeni_basvuru])]).to_csv(BASVURU_FILE, index=False)
+                        st.success("Başvurunuz başarıyla alındı! İnsan Kaynakları departmanımız sizinle iletişime geçecektir.")
+
 # ==========================================
 # ANA SİSTEM (GİRİŞ YAPILDIKTAN SONRA)
 # ==========================================
@@ -176,7 +196,6 @@ else:
         st.caption(f"{'👑 Yönetici' if st.session_state.kullanici_tipi == 'Yonetici' else 'Çalışan'}")
         st.divider()
         
-        # YENİ MENÜ MANTIĞI: Yöneticiye form gösterilmez.
         if st.session_state.kullanici_tipi == "Yonetici":
             menu_secenekleri = ["Yönetici Paneli", "Kesinleşen Liste", "Profilim"]
         else:
@@ -195,7 +214,6 @@ else:
         st.header("👤 Profilimi Düzenle")
         df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
         u_data = df_k[df_k["Email"] == st.session_state.kullanici_mail].iloc[0]
-        
         col_foto, col_bilgi = st.columns([1, 2])
         
         with col_foto:
@@ -272,7 +290,8 @@ else:
     elif sayfa == "Yönetici Paneli" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("👑 Yönetim Kontrol Merkezi")
         
-        tab_k, tab_t, tab_m, tab_y = st.tabs(["👥 Kullanıcılar", "📥 Gelen Talepler", "🛠️ Manuel Planlama", "🚀 Yayınlama"])
+        # YENİ 5. SEKME EKLENDİ (Başvurular)
+        tab_k, tab_t, tab_m, tab_y, tab_b = st.tabs(["👥 Kullanıcılar", "📥 Gelen Talepler", "🛠️ Manuel Planlama", "🚀 Yayınlama", "👔 İK Başvuruları"])
         
         with tab_k:
             df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
@@ -321,7 +340,7 @@ else:
                         user_email = user_email_list[0] if len(user_email_list) > 0 else None
 
                         with st.form(key=f"duzenle_form_{idx}"):
-                            st.write("🔧 **Yönetici Müdahalesi (Talebi Düzenle veya Doğrudan Onayla)**")
+                            st.write("🔧 **Yönetici Müdahalesi**")
                             col_iz, col_var = st.columns(2)
                             
                             with col_iz:
@@ -363,7 +382,7 @@ else:
 
         with tab_m:
             st.subheader("🛠️ Personele Manuel Vardiya Atama")
-            st.info("Form doldurmayı unutan veya yeni gelen personele buradan doğrudan vardiya atayabilirsiniz.")
+            st.info("Form doldurmayı unutan veya yeni gelen personele doğrudan vardiya atayabilirsiniz.")
             
             aktif_personel_listesi = df_k[df_k["Durum"] == "Onaylandı"]["Isim"].tolist()
             
@@ -428,3 +447,39 @@ else:
                             st.success(f"{basarili} kişiye mail gitti.")
                         else:
                             st.error("Önce listeyi yayınlamalısınız!")
+
+        # YENİ EKLENEN: İŞ BAŞVURULARI SEKME İÇERİĞİ
+        with tab_b:
+            st.subheader("Gelen İş Başvuruları")
+            df_b = pd.read_csv(BASVURU_FILE, dtype=str)
+            bekleyen_basvurular = df_b[df_b["Durum"] == "İnceleniyor"]
+            
+            if len(bekleyen_basvurular) > 0:
+                for idx, row in bekleyen_basvurular.iterrows():
+                    with st.expander(f"👤 {row['Ad Soyad']} - {row['Pozisyon']} | Tarih: {row['Tarih']}"):
+                        st.write(f"**Telefon:** {row['Telefon']} | **E-posta:** {row['E-posta']}")
+                        st.write(f"**Tecrübeleri:**\n{row['Tecrübe']}")
+                        
+                        c1, c2, c3 = st.columns(3)
+                        if c1.button("✅ Olumlu (Arşive Ekle)", key=f"bok_{idx}"):
+                            df_b.at[idx, "Durum"] = "Kabul Edildi"
+                            df_b.to_csv(BASVURU_FILE, index=False)
+                            st.rerun()
+                        if c2.button("❌ Reddet", key=f"bred_{idx}"):
+                            df_b.at[idx, "Durum"] = "Reddedildi"
+                            df_b.to_csv(BASVURU_FILE, index=False)
+                            st.rerun()
+                        if c3.button("🗑️ Sil", key=f"bsil_{idx}"):
+                            df_b = df_b.drop(idx)
+                            df_b.to_csv(BASVURU_FILE, index=False)
+                            st.rerun()
+            else:
+                st.info("İncelenmeyi bekleyen yeni başvuru bulunmuyor.")
+                
+            st.divider()
+            st.write("**Arşiv (Geçmiş Başvurular)**")
+            arsiv_b = df_b[df_b["Durum"] != "İnceleniyor"]
+            if len(arsiv_b) > 0:
+                st.dataframe(arsiv_b, use_container_width=True)
+            else:
+                st.write("Henüz arşive alınmış başvuru yok.")
