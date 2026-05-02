@@ -107,12 +107,19 @@ if "giris_yapildi" not in st.session_state:
     st.session_state.update({
         "giris_yapildi": False, "kullanici_tipi": "", "kullanici_adi": "", 
         "kullanici_mail": "", "reset_kod": "", "reset_mail": "", 
-        "calisma_tipi": ""
+        "calisma_tipi": "", "cikis_yapiliyor": False
     })
 
-# --- OTOMATİK GİRİŞ (CİHAZDAN TANIMA) ---
-if not st.session_state.giris_yapildi:
+# --- YENİ: ÇIKIŞ KONTROLÜ VE OTOMATİK GİRİŞ ---
+# Eğer kullanıcı Çıkış butonuna bastıysa, cihazdaki çerezi kesin olarak siliyoruz
+if st.session_state.get("cikis_yapiliyor"):
+    cookies.remove('edavm_user_mail')
+    st.session_state.cikis_yapiliyor = False
+    kayitli_mail = None
+else:
     kayitli_mail = cookies.get('edavm_user_mail')
+
+if not st.session_state.giris_yapildi:
     if kayitli_mail:
         try:
             res = supabase.table('kullanicilar').select('*').eq('email', kayitli_mail).execute()
@@ -130,7 +137,7 @@ if not st.session_state.giris_yapildi:
         except: pass
 
 # ==========================================
-# GİRİŞ / KAYIT EKRANI (GÖRÜNMEZ KAPSAYICI)
+# GİRİŞ / KAYIT EKRANI
 # ==========================================
 if not st.session_state.giris_yapildi:
     login_placeholder = st.empty()
@@ -154,8 +161,6 @@ if not st.session_state.giris_yapildi:
                     if res.data:
                         user = res.data[0]
                         if user["durum"] == "Onaylandı":
-                            
-                            # SADECE SEÇİLİYSE TELEFONA KAYDET
                             if beni_hatirla:
                                 cookies.set('edavm_user_mail', user["email"], max_age=30*24*60*60)
                             else:
@@ -169,7 +174,6 @@ if not st.session_state.giris_yapildi:
                                 "kullanici_mail": user["email"],
                                 "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
                             })
-                            # Eski giriş ekranını tek hamlede silip kodun aşağıya inmesini (Panele geçmesini) sağlıyoruz!
                             login_placeholder.empty() 
                         else: st.warning("⏳ Hesabınız onay bekliyor.")
                     else: st.error("❌ E-posta veya şifre hatalı.")
@@ -189,6 +193,9 @@ if not st.session_state.giris_yapildi:
                         else:
                             yeni_veri = {"isim": str(isim.strip().title()), "email": str(mail), "sifre": str(sifre), "telefon": str(tel), "durum": "Beklemede", "rol": "Personel", "calisma_tipi": calisma_tipi}
                             supabase.table('kullanicilar').insert(yeni_veri).execute()
+                            
+                            mesaj = f"Merhaba {isim.strip().title()},\n\nSisteme kayıt talebiniz başarıyla alınmıştır. Yönetim onayından sonra panelinize giriş yapabilirsiniz.\n\nİyi çalışmalar,\nED-AVM Yönetim"
+                            mail_gonder(mail, "ED-AVM | Kayıt Talebiniz Alındı", mesaj)
                             st.success("Kayıt başarılı! Yönetim onayından sonra girebilirsiniz.")
 
             elif sekme == "❓ Şifremi Unuttum":
@@ -229,7 +236,7 @@ if not st.session_state.giris_yapildi:
                             st.success("Başvurunuz İK sistemine başarıyla kaydedildi!")
 
 # ==========================================
-# ANA SİSTEM PANELİ (GİRİŞ YAPILDIKTAN SONRA)
+# ANA SİSTEM PANELİ
 # ==========================================
 if st.session_state.giris_yapildi:
     pp_path = os.path.join(PROFILE_DIR, f"{st.session_state.kullanici_mail}.png")
@@ -250,12 +257,13 @@ if st.session_state.giris_yapildi:
         sayfa = st.radio("Menü", menu_secenekleri)
         st.divider()
         
-        if st.button("🚪 Çıkış Yap", use_container_width=True):
-            cookies.remove('edavm_user_mail') # Çıkışta da cihazdan hafızayı siliyoruz
+        # --- YENİ: CALLBACK İLE KUSURSUZ ÇIKIŞ YAPMA SİSTEMİ ---
+        def tam_cikis_yap():
+            st.session_state.cikis_yapiliyor = True
             st.session_state.giris_yapildi = False
-            st.rerun()
+            
+        st.button("🚪 Çıkış Yap", on_click=tam_cikis_yap, use_container_width=True)
 
-    # --- PROFİLİM ---
     if sayfa == "Profilim":
         st.header("👤 Profilimi Düzenle")
         res_u = supabase.table('kullanicilar').select('*').eq('email', st.session_state.kullanici_mail).execute()
@@ -273,7 +281,6 @@ if st.session_state.giris_yapildi:
         with col_bilgi:
             yeni_isim = st.text_input("Ad Soyad:", value=str(u_data["isim"]))
             yeni_tel = st.text_input("Telefon:", value=str(u_data["telefon"]))
-            
             idx_tip = 0 if u_data.get("calisma_tipi", "Tam Zamanlı") == "Tam Zamanlı" else 1
             yeni_tip = st.selectbox("Çalışma Tipi:", ["Tam Zamanlı", "Part-Time"], index=idx_tip)
             yeni_sifre = st.text_input("Şifre:", value=str(u_data["sifre"]), type="password")
@@ -286,7 +293,6 @@ if st.session_state.giris_yapildi:
                 st.session_state.calisma_tipi = str(yeni_tip)
                 st.success("Profiliniz başarıyla güncellendi!"); st.rerun()
 
-    # --- VARDİYA İŞLEMLERİ (PERSONEL) ---
     elif sayfa == "Vardiya İşlemleri":
         st.header("📅 Haftalık Vardiya Planlaması")
         tab1, tab2, tab3 = st.tabs(["✍️ Planımı Gönder", "👀 Onaylananlar (Canlı Taslak)", "📊 Kesinleşen Liste"])
@@ -315,7 +321,6 @@ if st.session_state.giris_yapildi:
                     
                     supabase.table('talepler').delete().eq('personel', st.session_state.kullanici_adi).execute()
                     supabase.table('talepler').insert(yeni_talep).execute()
-                    
                     st.success("Talebiniz veritabanına işlendi ve yönetime iletildi.")
                     
         with tab2:
@@ -334,7 +339,6 @@ if st.session_state.giris_yapildi:
                 else: st.warning("Liste veritabanında boş.")
             else: st.warning("⚠️ Kesinleşmiş liste henüz yayınlanmamıştır.")
 
-    # --- KESİNLEŞEN LİSTE (YÖNETİCİ) ---
     elif sayfa == "Kesinleşen Liste":
         st.header("📊 Kesinleşen Vardiya Listesi")
         if yayin_durumu == "YAYINLANDI":
@@ -345,7 +349,6 @@ if st.session_state.giris_yapildi:
                 st.table(df_v.style.map(style_status, subset=gunler))
         else: st.warning("⚠️ Yayınlanmış liste yok.")
 
-    # --- YÖNETİCİ PANELİ ---
     elif sayfa == "Yönetici Paneli" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("👑 Yönetim Kontrol Merkezi")
         tab_k, tab_t, tab_m, tab_y, tab_b = st.tabs(["👥 Kullanıcılar", "📥 Gelen Talepler", "🛠️ Manuel Plan", "🚀 Yayınlama", "👔 İK"])
@@ -362,6 +365,8 @@ if st.session_state.giris_yapildi:
                         c1, c2 = st.columns(2)
                         if c1.button("Onayla", key=f"kon_{row['email']}"):
                             supabase.table('kullanicilar').update({'durum': 'Onaylandı'}).eq('email', row['email']).execute()
+                            onay_mesaji = f"Merhaba {row['isim']},\n\nED-AVM portal hesabınız yönetim tarafından onaylanmıştır. Aşağıdaki linkten giriş yapabilirsiniz:\nhttps://99am.streamlit.app\n\nİyi çalışmalar."
+                            mail_gonder(row['email'], "ED-AVM | Hesabınız Onaylandı", onay_mesaji)
                             st.rerun()
                         if c2.button("Reddet", key=f"kred_{row['email']}"):
                             supabase.table('kullanicilar').delete().eq('email', row['email']).execute()
@@ -485,12 +490,10 @@ if st.session_state.giris_yapildi:
                     taslak_df = get_taslak_df()
                     if not taslak_df.empty:
                         supabase.table('vardiyalar').delete().neq('personel', 'x').execute()
-                        
                         for _, row in taslak_df.iterrows():
                             v_data = {"personel": row["Personel"]}
                             for g in gunler: v_data[g] = row[g]
                             supabase.table('vardiyalar').insert(v_data).execute()
-                        
                         supabase.table('ayarlar').update({'deger': 'YAYINLANDI'}).eq('ayar_adi', 'yayin_durumu').execute()
                         supabase.table('talepler').delete().neq('id', 0).execute()
                         st.success("Liste Bulut'a kaydedildi ve yayınlandı!"); st.rerun()
