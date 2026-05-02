@@ -176,9 +176,11 @@ else:
         st.caption(f"{'👑 Yönetici' if st.session_state.kullanici_tipi == 'Yonetici' else 'Çalışan'}")
         st.divider()
         
-        menu_secenekleri = ["Vardiya İşlemleri", "Profilim"]
+        # YENİ MENÜ MANTIĞI: Yöneticiye form gösterilmez.
         if st.session_state.kullanici_tipi == "Yonetici":
-            menu_secenekleri.append("Yönetici Paneli")
+            menu_secenekleri = ["Yönetici Paneli", "Kesinleşen Liste", "Profilim"]
+        else:
+            menu_secenekleri = ["Vardiya İşlemleri", "Profilim"]
             
         sayfa = st.radio("Menü", menu_secenekleri)
         st.divider()
@@ -222,7 +224,7 @@ else:
                 st.success("Profil bilgileriniz başarıyla güncellendi!")
                 st.rerun()
 
-    # --- 2. SAYFA: VARDİYA İŞLEMLERİ ---
+    # --- 2. SAYFA: VARDİYA İŞLEMLERİ (SADECE PERSONEL İÇİN) ---
     elif sayfa == "Vardiya İşlemleri":
         st.header("📅 Haftalık Vardiya Planlaması")
         tab1, tab2 = st.tabs(["✍️ Planımı Gönder", "📊 Kesinleşen Liste"])
@@ -252,14 +254,26 @@ else:
             else:
                 st.warning("⚠️ Bu haftanın listesi henüz yönetim tarafından yayınlanmamıştır.")
 
-    # --- 3. SAYFA: YÖNETİCİ PANELİ (4 SEKMEYE BÖLÜNDÜ) ---
+    # --- 3. SAYFA: KESİNLEŞEN LİSTE (SADECE YÖNETİCİ İÇİN) ---
+    elif sayfa == "Kesinleşen Liste":
+        st.header("📊 Kesinleşen Vardiya Listesi")
+        if yayin_durumu == "YAYINLANDI":
+            if os.path.exists(VARDIYA_FILE):
+                df_v = pd.read_csv(VARDIYA_FILE, dtype=str)
+                def style_status(v):
+                    val_str = str(v)
+                    c = "#ff4b4b" if "🔴" in val_str else "#1c83e1" if "A " in val_str else "#28a745" if "S " in val_str else "#4CAF50"
+                    return f'background-color: {c}; color: white'
+                st.table(df_v.style.map(style_status, subset=gunler))
+        else:
+            st.warning("⚠️ Bu haftanın listesi henüz yayınlanmadığı için görüntülenemiyor.")
+
+    # --- 4. SAYFA: YÖNETİCİ PANELİ (SADECE YÖNETİCİ İÇİN) ---
     elif sayfa == "Yönetici Paneli" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("👑 Yönetim Kontrol Merkezi")
         
-        # YÖNETİCİ İÇİN YENİ 4 SEKME TASARIMI
         tab_k, tab_t, tab_m, tab_y = st.tabs(["👥 Kullanıcılar", "📥 Gelen Talepler", "🛠️ Manuel Planlama", "🚀 Yayınlama"])
         
-        # --- SEKME 1: KULLANICI YÖNETİMİ ---
         with tab_k:
             df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
             bekleyenler = df_k[df_k["Durum"] == "Beklemede"]
@@ -292,7 +306,6 @@ else:
                             df_k.to_csv(KULLANICI_FILE, index=False)
                             st.rerun()
 
-        # --- SEKME 2: GELEN TALEPLER (ADMİN DÜZENLEME EKLENDİ) ---
         with tab_t:
             df_t = pd.read_csv(TALEPLER_FILE, dtype=str)
             bekleyen_talepler = df_t[df_t["Durum"] == "Beklemede"]
@@ -307,7 +320,6 @@ else:
                         user_email_list = df_k[df_k['Isim'] == row['Personel']]['Email'].values
                         user_email = user_email_list[0] if len(user_email_list) > 0 else None
 
-                        # ADMİN MÜDAHALE FORMU
                         with st.form(key=f"duzenle_form_{idx}"):
                             st.write("🔧 **Yönetici Müdahalesi (Talebi Düzenle veya Doğrudan Onayla)**")
                             col_iz, col_var = st.columns(2)
@@ -327,7 +339,6 @@ else:
                             btn_red = c2.form_submit_button("❌ Reddet")
 
                             if btn_onay:
-                                # Dataframe'i tekrar oku (güvenlik için)
                                 df_t_guncel = pd.read_csv(TALEPLER_FILE, dtype=str)
                                 df_t_guncel.at[idx, "İzin Günü"] = str(yeni_izin)
                                 df_t_guncel.at[idx, "Haftalık Vardiya"] = str(yeni_vardiya)
@@ -338,7 +349,7 @@ else:
                                     if yeni_izin == row['İzin Günü'] and yeni_vardiya == row['Haftalık Vardiya']:
                                         mail_gonder(user_email, "ED-AVM | Vardiyanız Onaylandı", f"Merhaba {row['Personel']},\nTalebiniz aynen onaylanmıştır.")
                                     else:
-                                        mail_gonder(user_email, "ED-AVM | Vardiyanız Düzenlenerek Onaylandı", f"Merhaba {row['Personel']},\nYönetim operasyonel nedenlerle talebinizi güncelledi. Yeni durumunuz:\nİzin: {yeni_izin}\Vardiya: {yeni_vardiya}")
+                                        mail_gonder(user_email, "ED-AVM | Vardiyanız Düzenlenerek Onaylandı", f"Merhaba {row['Personel']},\nYönetim operasyonel nedenlerle talebinizi güncelledi. Yeni durumunuz:\nİzin: {yeni_izin}\nVardiya: {yeni_vardiya}")
                                 st.rerun()
 
                             if btn_red:
@@ -350,7 +361,6 @@ else:
             else:
                 st.info("Bekleyen talep yok.")
 
-        # --- SEKME 3: MANUEL PLANLAMA (SİSTEMİ EZME) ---
         with tab_m:
             st.subheader("🛠️ Personele Manuel Vardiya Atama")
             st.info("Form doldurmayı unutan veya yeni gelen personele buradan doğrudan vardiya atayabilirsiniz.")
@@ -365,9 +375,7 @@ else:
                     
                     if st.form_submit_button("Sisteme İşle (Otomatik Onaylı)"):
                         df_t = pd.read_csv(TALEPLER_FILE, dtype=str)
-                        # Eğer bu personelin eski bir talebi (bekleyen veya onaylanan) varsa sil ki çakışmasın
                         df_t = df_t[df_t["Personel"] != secilen_kisi] 
-                        
                         yeni_manuel = {"Personel": secilen_kisi, "İzin Günü": secilen_izin, "Haftalık Vardiya": secilen_vardiya, "Neden": "Yönetici tarafından manuel atandı.", "Durum": "Onaylandı"}
                         df_t = pd.concat([df_t, pd.DataFrame([yeni_manuel])], ignore_index=True)
                         df_t.to_csv(TALEPLER_FILE, index=False)
@@ -376,7 +384,6 @@ else:
             else:
                 st.warning("Sistemde aktif personel bulunmuyor.")
 
-        # --- SEKME 4: YAYINLAMA VE SIFIRLAMA ---
         with tab_y:
             st.subheader("Haftalık Operasyon Kontrolü")
             if st.button("🔄 Yeni Haftaya Başla (Mevcut Listeyi Gizle)"):
