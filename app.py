@@ -305,7 +305,6 @@ if st.session_state.giris_yapildi:
         st.caption(f"{'👑 Yönetici' if st.session_state.kullanici_tipi == 'Yonetici' else 'Çalışan'}")
         st.divider()
         
-        # --- MENÜYE TASARIM SEKMESİ EKLENDİ ---
         if st.session_state.kullanici_tipi == "Yonetici":
             menu_secenekleri = ["Yönetici Paneli", "Kesinleşen Liste", "Sistem Tasarımı", "Profilim"]
         else:
@@ -329,7 +328,6 @@ if st.session_state.giris_yapildi:
             st.subheader("Fotoğraf")
             if os.path.exists(pp_path): st.image(pp_path, width=200)
             yuklenen_foto = st.file_uploader("Yeni Fotoğraf Yükle (PNG/JPG)", type=["png", "jpg", "jpeg"])
-            # Sonsuz döngüden kaçınmak için st.rerun kaldırıldı, sessizce kaydediliyor
             if yuklenen_foto is not None:
                 with open(pp_path, "wb") as f: f.write(yuklenen_foto.getbuffer())
                 st.success("Yüklendi! Yeni resminiz bir sonraki işlemde görünür olacaktır.")
@@ -364,8 +362,10 @@ if st.session_state.giris_yapildi:
                     st.info("ℹ️ Part-Time personel olarak sadece **ÇALIŞACAĞINIZ** günleri seçiniz.")
                     secilen_gunler = st.multiselect("✅ ÇALIŞACAĞINIZ Günleri Seçiniz:", gunler)
                 else:
-                    st.info("ℹ️ Tam Zamanlı personelin haftada **sadece 1 gün** izin hakkı vardır. Lütfen izin gününüzü seçiniz.")
-                    secilen_gun = st.selectbox("🌴 İZİNLİ Olacağınız Günü Seçiniz:", gunler)
+                    # YENİ: İzin İstemiyorum seçeneği eklendi
+                    st.info("ℹ️ İzin kullanmak istemiyorsanız ilgili seçeneği seçebilirsiniz.")
+                    izin_secenekleri = ["❌ İzin İstemiyorum (Tam Hafta Çalışacağım)"] + gunler
+                    secilen_gun = st.selectbox("🌴 İZİNLİ Olacağınız Günü Seçiniz:", izin_secenekleri)
 
                 haftalik_shift = st.radio("Vardiyanız:", vardiya_secenekleri)
                 neden = st.text_area("Notunuz (İsteğe Bağlı):")
@@ -377,7 +377,11 @@ if st.session_state.giris_yapildi:
                         if st.session_state.calisma_tipi == "Part-Time":
                             izin_listesi = [g for g in gunler if g not in secilen_gunler]
                         else:
-                            izin_listesi = [secilen_gun]
+                            # İzin istemiyorum derse listeyi boş bırak
+                            if secilen_gun == "❌ İzin İstemiyorum (Tam Hafta Çalışacağım)":
+                                izin_listesi = []
+                            else:
+                                izin_listesi = [secilen_gun]
                             
                         izin_str = ", ".join(izin_listesi) if len(izin_listesi) > 0 else "İzin Yok"
                         benzersiz_kimlik = f"{st.session_state.kullanici_adi} ({st.session_state.kullanici_mail})"
@@ -603,7 +607,6 @@ if st.session_state.giris_yapildi:
                             supabase.table('basvurular').delete().eq('id', row['id']).execute(); st.rerun()
             else: st.info("İncelenmeyi bekleyen başvuru yok.")
             
-    # --- YENİ EKLENEN, SOL MENÜDEKİ TASARIM SAYFASI ---
     elif sayfa == "Sistem Tasarımı" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("🎨 Sistemi Özelleştir")
         st.write("Sitenizin arayüzünü bir WordPress paneli gibi kolayca özelleştirin.")
@@ -616,7 +619,6 @@ if st.session_state.giris_yapildi:
             if os.path.exists(LOGO_PATH): 
                 st.image(LOGO_PATH, width=150)
             yeni_logo = st.file_uploader("Yeni Logo Yükle (PNG/JPG)", type=['png','jpg','jpeg'], key="logo_up")
-            # Sonsuz döngü kırıldı:
             if yeni_logo is not None:
                 with open(LOGO_PATH, "wb") as f: f.write(yeni_logo.getbuffer())
                 st.success("Logo başarıyla kaydedildi! Sayfayı yenilediğinizde (F5) aktif olacak.")
@@ -630,7 +632,6 @@ if st.session_state.giris_yapildi:
             if os.path.exists(BG_PATH): 
                 st.image(BG_PATH, width=250)
             yeni_bg = st.file_uploader("Yeni Arka Plan Yükle (PNG/JPG)", type=['png','jpg','jpeg'], key="bg_up")
-            # Sonsuz döngü kırıldı:
             if yeni_bg is not None:
                 with open(BG_PATH, "wb") as f: f.write(yeni_bg.getbuffer())
                 st.success("Arka plan başarıyla kaydedildi! Sayfayı yenilediğinizde (F5) aktif olacak.")
