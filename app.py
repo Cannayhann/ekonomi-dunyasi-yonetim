@@ -108,6 +108,7 @@ def tabloyu_ciz(df):
         df_gorsel['Personel'] = df_gorsel['Personel'].apply(lambda x: str(x).split(' (')[0] if ' (' in str(x) else x)
     st.table(df_gorsel.style.map(style_status, subset=gunler))
 
+# --- MÜHENDİSLİK: Karma Vardiyayı Tabloda Çözümleyen Fonksiyon ---
 def get_taslak_df():
     res_k = supabase.table('kullanicilar').select('isim, email').eq('durum', 'Onaylandı').neq('rol', 'Yonetici').execute()
     aktifler = [f"{k['isim']} ({k['email']})" for k in res_k.data] if res_k.data else []
@@ -125,14 +126,25 @@ def get_taslak_df():
         iz_str = str(r["izin_gunu"])
         v_str = str(r["haftalik_vardiya"])
         
-        if "Akşamcı" in v_str: shift = "A (12-21)"
-        elif "Tam" in v_str: shift = "T (09-21)"
-        else: shift = "S (09-18)"
-        
         for g in gunler:
-            if g in iz_str: taslak.at[p, g] = "🔴 İZİNLİ"
-            elif g == "Pazar": taslak.at[p, g] = "🟢 TAM GÜÇ"
-            else: taslak.at[p, g] = shift
+            if g in iz_str: 
+                taslak.at[p, g] = "🔴 İZİNLİ"
+            elif g == "Pazar": 
+                taslak.at[p, g] = "🟢 TAM GÜÇ"
+            else:
+                # Karma vardiya okuyucusu
+                if "Karma" in v_str:
+                    if f"{g}: Sabahçı" in v_str: shift = "S (09-18)"
+                    elif f"{g}: Akşamcı" in v_str: shift = "A (12-21)"
+                    elif f"{g}: Tam Gün" in v_str: shift = "T (09-21)"
+                    else: shift = "S (09-18)" # Eğer karma listede yoksa varsayılan
+                # Sabit vardiya okuyucusu
+                else:
+                    if "Akşamcı" in v_str: shift = "A (12-21)"
+                    elif "Tam" in v_str: shift = "T (09-21)"
+                    else: shift = "S (09-18)"
+                
+                taslak.at[p, g] = shift
             
     taslak.reset_index(inplace=True)
     taslak.rename(columns={'index': 'Personel'}, inplace=True)
@@ -358,29 +370,52 @@ if st.session_state.giris_yapildi:
         
         with tab1:
             with st.form("personel_formu", clear_on_submit=True):
+                # İZİN GÜNLERİNİN TESPİTİ
                 if st.session_state.calisma_tipi == "Part-Time":
                     st.info("ℹ️ Part-Time personel olarak sadece **ÇALIŞACAĞINIZ** günleri seçiniz.")
                     secilen_gunler = st.multiselect("✅ ÇALIŞACAĞINIZ Günleri Seçiniz:", gunler)
+                    calisilan_gunler = secilen_gunler
+                    izin_listesi = [g for g in gunler if g not in secilen_gunler]
                 else:
                     st.info("ℹ️ İzin kullanmak istemiyorsanız ilgili seçeneği seçebilirsiniz.")
                     izin_secenekleri = ["❌ İzin İstemiyorum (Tam Hafta Çalışacağım)"] + gunler
                     secilen_gun = st.selectbox("🌴 İZİNLİ Olacağınız Günü Seçiniz:", izin_secenekleri)
+                    if secilen_gun == "❌ İzin İstemiyorum (Tam Hafta Çalışacağım)":
+                        calisilan_gunler = gunler
+                        izin_listesi = []
+                    else:
+                        calisilan_gunler = [g for g in gunler if g != secilen_gun]
+                        izin_listesi = [secilen_gun]
 
-                haftalik_shift = st.radio("Vardiyanız:", vardiya_secenekleri)
+                # YENİ: VARDİYA TİPİ SEÇİMİ (SABİT / KARMA)
+                vardiya_tipi = st.radio("Çalışma Düzeniniz:", ["Sabit Vardiya (Tüm Hafta Aynı)", "Karma Vardiya (Günlere Göre Değişken)"])
+                
+                # Karma vardiya için verileri tutacak liste
+                karma_secimler = []
+                
+                if vardiya_tipi == "Sabit Vardiya (Tüm Hafta Aynı)":
+                    haftalik_shift = st.radio("Vardiyanız:", vardiya_secenekleri)
+                else:
+                    st.write("Aşağıdan her gün için vardiyanızı ayarlayabilirsiniz:")
+                    st.caption("Not: Pazar günleri mağaza kuralı gereği tablolara her zaman 'Tam Güç' olarak yansıtılmaktadır.")
+                    c1, c2 = st.columns(2)
+                    for i, g in enumerate(calisilan_gunler):
+                        with (c1 if i % 2 == 0 else c2):
+                            sec = st.selectbox(f"{g}:", vardiya_secenekleri, key=f"karma_{g}")
+                            shift_kisa = "Sabahçı" if "Sabahçı" in sec else ("Akşamcı" if "Akşamcı" in sec else "Tam Gün")
+                            karma_secimler.append(f"{g}: {shift_kisa}")
+                    
+                    if karma_secimler:
+                        haftalik_shift = "Karma | " + ", ".join(karma_secimler)
+                    else:
+                        haftalik_shift = "Karma | Seçim Yok"
+
                 neden = st.text_area("Notunuz (İsteğe Bağlı):")
                 
                 if st.form_submit_button("Planımı Gönder"):
                     if st.session_state.calisma_tipi == "Part-Time" and len(secilen_gunler) == 0:
                         st.error("❌ Hata: Lütfen çalışacağınız günleri seçiniz.")
                     else:
-                        if st.session_state.calisma_tipi == "Part-Time":
-                            izin_listesi = [g for g in gunler if g not in secilen_gunler]
-                        else:
-                            if secilen_gun == "❌ İzin İstemiyorum (Tam Hafta Çalışacağım)":
-                                izin_listesi = []
-                            else:
-                                izin_listesi = [secilen_gun]
-                            
                         izin_str = ", ".join(izin_listesi) if len(izin_listesi) > 0 else "İzin Yok"
                         benzersiz_kimlik = f"{st.session_state.kullanici_adi} ({st.session_state.kullanici_mail})"
                         
@@ -391,7 +426,6 @@ if st.session_state.giris_yapildi:
                         st.success("Talebiniz veritabanına işlendi ve yönetime iletildi.")
                     
         with tab2:
-            # YENİ: Personel için Canlı Taslak Yenileme Butonu
             c1, c2 = st.columns([4, 1])
             with c1: st.info("💡 Yönetimin şu ana kadar onayladığı güncel durumu gösterir.")
             with c2: 
@@ -479,7 +513,6 @@ if st.session_state.giris_yapildi:
                             st.info("💡 Yönetici hesaplarında çalışma veya vardiya tipi aranmaz.")
 
         with tab_t:
-            # YENİ: Yönetici için Talepler Yenileme Butonu
             c1, c2 = st.columns([4, 1])
             with c1: st.subheader("1. Bekleyen Talepler")
             with c2: 
@@ -501,12 +534,27 @@ if st.session_state.giris_yapildi:
                                     mevcut_izin = [g for g in gunler if g in str(row['izin_gunu'])]
                                     yeni_izin = st.multiselect("İzinli/Boş Günler:", gunler, default=mevcut_izin)
                                 with col_var:
-                                    def_var_idx = 1 if "Akşamcı" in str(row['haftalik_vardiya']) else 2 if "Tam" in str(row['haftalik_vardiya']) else 0
-                                    yeni_vardiya = st.radio("Vardiya:", vardiya_secenekleri, index=def_var_idx)
+                                    # YÖNETİCİ ONAY EKRANI KARMA VARDİYA KORUMASI
+                                    is_karma = "Karma" in str(row['haftalik_vardiya'])
+                                    if is_karma:
+                                        v_secenekler = ["Aynı Kalsın (Karma Düzen)"] + vardiya_secenekleri
+                                        def_var_idx = 0
+                                    else:
+                                        v_secenekler = vardiya_secenekleri
+                                        def_var_idx = 1 if "Akşamcı" in str(row['haftalik_vardiya']) else 2 if "Tam" in str(row['haftalik_vardiya']) else 0
+                                        
+                                    yeni_vardiya = st.radio("Vardiya:", v_secenekler, index=def_var_idx)
+                                    
                                 c1, c2 = st.columns(2)
                                 if c1.form_submit_button("✅ Onayla"):
                                     yeni_izin_str = ", ".join(yeni_izin) if len(yeni_izin) > 0 else "İzin Yok"
-                                    supabase.table('talepler').update({'izin_gunu': yeni_izin_str, 'haftalik_vardiya': str(yeni_vardiya), 'durum': 'Onaylandı'}).eq('id', row['id']).execute()
+                                    
+                                    if is_karma and yeni_vardiya == "Aynı Kalsın (Karma Düzen)":
+                                        final_vardiya = str(row['haftalik_vardiya'])
+                                    else:
+                                        final_vardiya = str(yeni_vardiya)
+                                        
+                                    supabase.table('talepler').update({'izin_gunu': yeni_izin_str, 'haftalik_vardiya': final_vardiya, 'durum': 'Onaylandı'}).eq('id', row['id']).execute()
                                     st.rerun()
                                 if c2.form_submit_button("❌ Reddet"):
                                     supabase.table('talepler').delete().eq('id', row['id']).execute()
@@ -530,13 +578,26 @@ if st.session_state.giris_yapildi:
                                     mevcut_izin = [g for g in gunler if g in str(row['izin_gunu'])]
                                     guncel_izin = st.multiselect("İzin Değiştir:", gunler, default=mevcut_izin)
                                 with col_var:
-                                    def_var_idx = 1 if "Akşamcı" in str(row['haftalik_vardiya']) else 2 if "Tam" in str(row['haftalik_vardiya']) else 0
-                                    guncel_vardiya = st.radio("Vardiya Değiştir:", vardiya_secenekleri, index=def_var_idx)
+                                    is_karma = "Karma" in str(row['haftalik_vardiya'])
+                                    if is_karma:
+                                        v_secenekler = ["Aynı Kalsın (Karma Düzen)"] + vardiya_secenekleri
+                                        def_var_idx = 0
+                                    else:
+                                        v_secenekler = vardiya_secenekleri
+                                        def_var_idx = 1 if "Akşamcı" in str(row['haftalik_vardiya']) else 2 if "Tam" in str(row['haftalik_vardiya']) else 0
+                                        
+                                    guncel_vardiya = st.radio("Vardiya Değiştir:", v_secenekler, index=def_var_idx)
                                 
                                 c1, c2, c3 = st.columns(3)
                                 if c1.form_submit_button("🔄 Güncelle"):
                                     yeni_izin_str = ", ".join(guncel_izin) if len(guncel_izin) > 0 else "İzin Yok"
-                                    supabase.table('talepler').update({'izin_gunu': yeni_izin_str, 'haftalik_vardiya': str(guncel_vardiya)}).eq('id', row['id']).execute()
+                                    
+                                    if is_karma and guncel_vardiya == "Aynı Kalsın (Karma Düzen)":
+                                        final_vardiya = str(row['haftalik_vardiya'])
+                                    else:
+                                        final_vardiya = str(guncel_vardiya)
+                                        
+                                    supabase.table('talepler').update({'izin_gunu': yeni_izin_str, 'haftalik_vardiya': final_vardiya}).eq('id', row['id']).execute()
                                     st.rerun()
                                 if c2.form_submit_button("⚠️ İptal Et"):
                                     supabase.table('talepler').update({'durum': 'Beklemede'}).eq('id', row['id']).execute()
