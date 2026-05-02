@@ -108,7 +108,6 @@ def tabloyu_ciz(df):
         df_gorsel['Personel'] = df_gorsel['Personel'].apply(lambda x: str(x).split(' (')[0] if ' (' in str(x) else x)
     st.table(df_gorsel.style.map(style_status, subset=gunler))
 
-# --- MÜHENDİSLİK: Karma Vardiyayı Tabloda Çözümleyen Fonksiyon ---
 def get_taslak_df():
     res_k = supabase.table('kullanicilar').select('isim, email').eq('durum', 'Onaylandı').neq('rol', 'Yonetici').execute()
     aktifler = [f"{k['isim']} ({k['email']})" for k in res_k.data] if res_k.data else []
@@ -132,13 +131,11 @@ def get_taslak_df():
             elif g == "Pazar": 
                 taslak.at[p, g] = "🟢 TAM GÜÇ"
             else:
-                # Karma vardiya okuyucusu
                 if "Karma" in v_str:
                     if f"{g}: Sabahçı" in v_str: shift = "S (09-18)"
                     elif f"{g}: Akşamcı" in v_str: shift = "A (12-21)"
                     elif f"{g}: Tam Gün" in v_str: shift = "T (09-21)"
-                    else: shift = "S (09-18)" # Eğer karma listede yoksa varsayılan
-                # Sabit vardiya okuyucusu
+                    else: shift = "S (09-18)"
                 else:
                     if "Akşamcı" in v_str: shift = "A (12-21)"
                     elif "Tam" in v_str: shift = "T (09-21)"
@@ -370,14 +367,14 @@ if st.session_state.giris_yapildi:
         
         with tab1:
             with st.form("personel_formu", clear_on_submit=True):
-                # İZİN GÜNLERİNİN TESPİTİ
+                # 1. GÜNLERİ BELİRLEME
                 if st.session_state.calisma_tipi == "Part-Time":
                     st.info("ℹ️ Part-Time personel olarak sadece **ÇALIŞACAĞINIZ** günleri seçiniz.")
                     secilen_gunler = st.multiselect("✅ ÇALIŞACAĞINIZ Günleri Seçiniz:", gunler)
                     calisilan_gunler = secilen_gunler
                     izin_listesi = [g for g in gunler if g not in secilen_gunler]
                 else:
-                    st.info("ℹ️ İzin kullanmak istemiyorsanız ilgili seçeneği seçebilirsiniz.")
+                    st.info("ℹ️ Tam Zamanlı personelin haftada sadece 1 gün izin hakkı vardır.")
                     izin_secenekleri = ["❌ İzin İstemiyorum (Tam Hafta Çalışacağım)"] + gunler
                     secilen_gun = st.selectbox("🌴 İZİNLİ Olacağınız Günü Seçiniz:", izin_secenekleri)
                     if secilen_gun == "❌ İzin İstemiyorum (Tam Hafta Çalışacağım)":
@@ -387,54 +384,60 @@ if st.session_state.giris_yapildi:
                         calisilan_gunler = [g for g in gunler if g != secilen_gun]
                         izin_listesi = [secilen_gun]
 
-                # YENİ: VARDİYA TİPİ SEÇİMİ (SABİT / KARMA)
-                vardiya_tipi = st.radio("Çalışma Düzeniniz:", ["Sabit Vardiya (Tüm Hafta Aynı)", "Karma Vardiya (Günlere Göre Değişken)"])
-                
-                # Karma vardiya için verileri tutacak liste
+                # 2. VARDİYA BELİRLEME (YENİLENMİŞ MANTIK)
                 karma_secimler = []
                 
-                if vardiya_tipi == "Sabit Vardiya (Tüm Hafta Aynı)":
-                    haftalik_shift = st.radio("Vardiyanız:", vardiya_secenekleri)
-                else:
-                    st.write("Aşağıdan her gün için vardiyanızı ayarlayabilirsiniz:")
-                    st.caption("Not: Pazar günleri mağaza kuralı gereği tablolara her zaman 'Tam Güç' olarak yansıtılmaktadır.")
+                if st.session_state.calisma_tipi == "Part-Time":
+                    # PART-TIME: Karma vardiya zorunlu (En mantıklısı budur)
+                    st.write("Seçtiğiniz günler için vardiyanızı ayarlayın:")
                     c1, c2 = st.columns(2)
                     for i, g in enumerate(calisilan_gunler):
                         with (c1 if i % 2 == 0 else c2):
-                            sec = st.selectbox(f"{g}:", vardiya_secenekleri, key=f"karma_{g}")
+                            sec = st.selectbox(f"{g}:", vardiya_secenekleri, key=f"karma_pt_{g}")
                             shift_kisa = "Sabahçı" if "Sabahçı" in sec else ("Akşamcı" if "Akşamcı" in sec else "Tam Gün")
                             karma_secimler.append(f"{g}: {shift_kisa}")
                     
                     if karma_secimler:
                         haftalik_shift = "Karma | " + ", ".join(karma_secimler)
                     else:
-                        haftalik_shift = "Karma | Seçim Yok"
+                        haftalik_shift = "Beklemede"
+                else:
+                    # TAM ZAMANLI: Sabit veya Karma seçebilir
+                    vardiya_tipi = st.radio("Çalışma Düzeniniz:", ["Sabit Vardiya", "Karma Vardiya"])
+                    if vardiya_tipi == "Sabit Vardiya":
+                        sec_sabit = st.radio("Vardiyanız:", vardiya_secenekleri)
+                        haftalik_shift = sec_sabit
+                    else:
+                        st.write("Günlük vardiya ayarınız:")
+                        c1, c2 = st.columns(2)
+                        for i, g in enumerate(calisilan_gunler):
+                            with (c1 if i % 2 == 0 else c2):
+                                sec = st.selectbox(f"{g}:", vardiya_secenekleri, key=f"karma_ft_{g}")
+                                shift_kisa = "Sabahçı" if "Sabahçı" in sec else ("Akşamcı" if "Akşamcı" in sec else "Tam Gün")
+                                karma_secimler.append(f"{g}: {shift_kisa}")
+                        haftalik_shift = "Karma | " + ", ".join(karma_secimler)
 
                 neden = st.text_area("Notunuz (İsteğe Bağlı):")
                 
                 if st.form_submit_button("Planımı Gönder"):
                     if st.session_state.calisma_tipi == "Part-Time" and len(secilen_gunler) == 0:
-                        st.error("❌ Hata: Lütfen çalışacağınız günleri seçiniz.")
+                        st.error("❌ Hata: En az bir çalışma günü seçmelisiniz.")
                     else:
                         izin_str = ", ".join(izin_listesi) if len(izin_listesi) > 0 else "İzin Yok"
                         benzersiz_kimlik = f"{st.session_state.kullanici_adi} ({st.session_state.kullanici_mail})"
-                        
                         yeni_talep = {"personel": benzersiz_kimlik, "izin_gunu": izin_str, "haftalik_vardiya": haftalik_shift, "neden": neden, "durum": "Beklemede"}
-                        
                         supabase.table('talepler').delete().eq('personel', benzersiz_kimlik).execute()
                         supabase.table('talepler').insert(yeni_talep).execute()
-                        st.success("Talebiniz veritabanına işlendi ve yönetime iletildi.")
+                        st.success("Talebiniz başarıyla iletildi.")
                     
         with tab2:
             c1, c2 = st.columns([4, 1])
             with c1: st.info("💡 Yönetimin şu ana kadar onayladığı güncel durumu gösterir.")
             with c2: 
                 if st.button("🔄 Verileri Yenile", key="pers_yenile", use_container_width=True): st.rerun()
-                
             taslak_df = get_taslak_df()
-            if not taslak_df.empty: 
-                tabloyu_ciz(taslak_df)
-            else: st.warning("Henüz onaylanmış bir plan yok.")
+            if not taslak_df.empty: tabloyu_ciz(taslak_df)
+            else: st.warning("Onaylı plan yok.")
 
         with tab3:
             if yayin_durumu == "YAYINLANDI":
@@ -443,8 +446,8 @@ if st.session_state.giris_yapildi:
                     df_v = pd.DataFrame(res_v.data)
                     df_v.rename(columns={'personel': 'Personel'}, inplace=True)
                     tabloyu_ciz(df_v)
-                else: st.warning("Liste veritabanında boş.")
-            else: st.warning("⚠️ Kesinleşmiş liste henüz yayınlanmamıştır.")
+                else: st.warning("Liste boş.")
+            else: st.warning("⚠️ Liste henüz yayınlanmadı.")
 
     elif sayfa == "Kesinleşen Liste":
         st.header("📊 Kesinleşen Vardiya Listesi")
@@ -458,252 +461,116 @@ if st.session_state.giris_yapildi:
 
     elif sayfa == "Yönetici Paneli" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("👑 Yönetim Kontrol Merkezi")
-        
         tab_k, tab_t, tab_m, tab_y, tab_b = st.tabs(["👥 Kullanıcılar", "📥 Gelen Talepler", "🛠️ Manuel Plan", "🚀 Yayınlama", "👔 İK"])
         
         with tab_k:
             res_users = supabase.table('kullanicilar').select('*').execute()
             df_k = pd.DataFrame(res_users.data) if res_users.data else pd.DataFrame()
-            
             if not df_k.empty:
                 bekleyenler = df_k[df_k["durum"] == "Beklemede"]
                 st.subheader("Yeni Kayıtlar")
                 for _, row in bekleyenler.iterrows():
-                    with st.expander(f"👤 {row['isim']} ({row['email']}) | {row.get('calisma_tipi', 'Tam Zamanlı')}"):
+                    with st.expander(f"👤 {row['isim']} ({row['email']})"):
                         c1, c2 = st.columns(2)
                         if c1.button("Onayla", key=f"kon_{row['email']}"):
                             supabase.table('kullanicilar').update({'durum': 'Onaylandı'}).eq('email', row['email']).execute()
-                            onay_mesaji = f"Merhaba {row['isim']},\n\nED-AVM portal hesabınız yönetim tarafından onaylanmıştır. Aşağıdaki linkten giriş yapabilirsiniz:\nhttps://ekonomi-dunyasi-yonetim-msu7zf86qlczbai2sb99am.streamlit.app\n\nİyi çalışmalar."
-                            mail_gonder(row['email'], "ED-AVM | Hesabınız Onaylandı", onay_mesaji)
+                            onay_mesaji = f"Merhaba {row['isim']},\n\nHesabınız onaylanmıştır. Linkten girebilirsiniz:\nhttps://ekonomi-dunyasi-yonetim-msu7zf86qlczbai2sb99am.streamlit.app"
+                            mail_gonder(row['email'], "ED-AVM | Onay", onay_mesaji)
                             st.rerun()
                         if c2.button("Reddet", key=f"kred_{row['email']}"):
                             supabase.table('kullanicilar').delete().eq('email', row['email']).execute()
                             st.rerun()
-                
                 st.divider()
                 st.subheader("Aktif Kullanıcılar")
                 aktifler = df_k[df_k["durum"] == "Onaylandı"]
                 for _, row in aktifler.iterrows():
-                    mevcut_tip = row.get("calisma_tipi", "Tam Zamanlı")
-                    
-                    if row['rol'] == 'Yonetici':
-                        expander_title = f"👑 {row['isim']} (Yönetici)"
-                    else:
-                        expander_title = f"⚙️ {row['isim']} ({row['rol']} - {mevcut_tip})"
-                        
-                    with st.expander(expander_title):
-                        st.write(f"Mail: {row['email']} | Tel: {row['telefon']} | Şifre: {row['sifre']}")
-                        
+                    exp_title = f"👑 {row['isim']}" if row['rol'] == 'Yonetici' else f"⚙️ {row['isim']} ({row['calisma_tipi']})"
+                    with st.expander(exp_title):
+                        st.write(f"Mail: {row['email']} | Tel: {row['telefon']}")
                         if row['rol'] != 'Yonetici':
-                            idx_tip = 0 if mevcut_tip == "Tam Zamanlı" else 1
-                            yeni_tip = st.selectbox("Çalışma Tipi:", ["Tam Zamanlı", "Part-Time"], index=idx_tip, key=f"tip_{row['email']}")
-                            
+                            idx_tip = 0 if row['calisma_tipi'] == "Tam Zamanlı" else 1
+                            yeni_tip = st.selectbox("Tip:", ["Tam Zamanlı", "Part-Time"], index=idx_tip, key=f"tip_{row['email']}")
                             c1, c2 = st.columns(2)
-                            if c1.button("💾 Tipi Güncelle", key=f"kguncel_{row['email']}"):
-                                supabase.table('kullanicilar').update({'calisma_tipi': yeni_tip}).eq('email', row['email']).execute()
-                                st.rerun()
+                            if c1.button("💾 Güncelle", key=f"up_{row['email']}"):
+                                supabase.table('kullanicilar').update({'calisma_tipi': yeni_tip}).eq('email', row['email']).execute(); st.rerun()
                             if row["email"] != st.session_state.kullanici_mail: 
-                                if c2.button("🗑️ Kullanıcıyı Sil", key=f"kdel_{row['email']}"):
-                                    benzersiz_isim = f"{row['isim']} ({row['email']})"
-                                    supabase.table('talepler').delete().eq('personel', benzersiz_isim).execute()
-                                    supabase.table('vardiyalar').delete().eq('personel', benzersiz_isim).execute()
-                                    supabase.table('kullanicilar').delete().eq('email', row['email']).execute()
-                                    st.rerun()
-                        else:
-                            st.info("💡 Yönetici hesaplarında çalışma veya vardiya tipi aranmaz.")
+                                if c2.button("🗑️ Sil", key=f"del_{row['email']}"):
+                                    supabase.table('kullanicilar').delete().eq('email', row['email']).execute(); st.rerun()
 
         with tab_t:
             c1, c2 = st.columns([4, 1])
             with c1: st.subheader("1. Bekleyen Talepler")
             with c2: 
-                if st.button("🔄 Talepleri Yenile", key="yonetici_yenile", use_container_width=True): st.rerun()
-            
+                if st.button("🔄 Yenile", key="yonetici_yenile", use_container_width=True): st.rerun()
             res_t = supabase.table('talepler').select('*').execute()
             df_t = pd.DataFrame(res_t.data) if res_t.data else pd.DataFrame()
-            
             if not df_t.empty:
-                bekleyen_talepler = df_t[df_t["durum"] == "Beklemede"]
-                if len(bekleyen_talepler) > 0:
-                    for _, row in bekleyen_talepler.iterrows():
-                        personel_adi = str(row['personel']).split(' (')[0] if ' (' in str(row['personel']) else str(row['personel'])
-                        with st.expander(f"⏳ {personel_adi} | İzin: {row['izin_gunu']} | Vardiya: {row['haftalik_vardiya']}"):
-                            if pd.notna(row['neden']) and str(row['neden']).strip() != "": st.write(f"**Not:** {row['neden']}")
-                            with st.form(key=f"ilk_onay_{row['id']}"):
-                                col_iz, col_var = st.columns(2)
-                                with col_iz:
-                                    mevcut_izin = [g for g in gunler if g in str(row['izin_gunu'])]
-                                    yeni_izin = st.multiselect("İzinli/Boş Günler:", gunler, default=mevcut_izin)
-                                with col_var:
-                                    # YÖNETİCİ ONAY EKRANI KARMA VARDİYA KORUMASI
-                                    is_karma = "Karma" in str(row['haftalik_vardiya'])
-                                    if is_karma:
-                                        v_secenekler = ["Aynı Kalsın (Karma Düzen)"] + vardiya_secenekleri
-                                        def_var_idx = 0
-                                    else:
-                                        v_secenekler = vardiya_secenekleri
-                                        def_var_idx = 1 if "Akşamcı" in str(row['haftalik_vardiya']) else 2 if "Tam" in str(row['haftalik_vardiya']) else 0
-                                        
-                                    yeni_vardiya = st.radio("Vardiya:", v_secenekler, index=def_var_idx)
-                                    
-                                c1, c2 = st.columns(2)
-                                if c1.form_submit_button("✅ Onayla"):
-                                    yeni_izin_str = ", ".join(yeni_izin) if len(yeni_izin) > 0 else "İzin Yok"
-                                    
-                                    if is_karma and yeni_vardiya == "Aynı Kalsın (Karma Düzen)":
-                                        final_vardiya = str(row['haftalik_vardiya'])
-                                    else:
-                                        final_vardiya = str(yeni_vardiya)
-                                        
-                                    supabase.table('talepler').update({'izin_gunu': yeni_izin_str, 'haftalik_vardiya': final_vardiya, 'durum': 'Onaylandı'}).eq('id', row['id']).execute()
-                                    st.rerun()
-                                if c2.form_submit_button("❌ Reddet"):
-                                    supabase.table('talepler').delete().eq('id', row['id']).execute()
-                                    st.rerun()
-                else: st.info("Bekleyen talep yok.")
-            else: st.info("Sistemde hiç talep yok.")
-
-            st.divider()
-            
-            st.subheader("2. Onaylanmış Talepleri Düzenle")
-            if not df_t.empty:
-                onayli_talepler = df_t[df_t["durum"] == "Onaylandı"]
-                if len(onayli_talepler) > 0:
-                    for _, row in onayli_talepler.iterrows():
-                        personel_adi = str(row['personel']).split(' (')[0] if ' (' in str(row['personel']) else str(row['personel'])
-                        with st.expander(f"✅ {personel_adi} | İzin: {row['izin_gunu']} | Vardiya: {row['haftalik_vardiya']}"):
-                            if pd.notna(row['neden']) and str(row['neden']).strip() != "": st.write(f"**Not:** {row['neden']}")
-                            with st.form(key=f"duzenle_onayli_{row['id']}"):
-                                col_iz, col_var = st.columns(2)
-                                with col_iz:
-                                    mevcut_izin = [g for g in gunler if g in str(row['izin_gunu'])]
-                                    guncel_izin = st.multiselect("İzin Değiştir:", gunler, default=mevcut_izin)
-                                with col_var:
-                                    is_karma = "Karma" in str(row['haftalik_vardiya'])
-                                    if is_karma:
-                                        v_secenekler = ["Aynı Kalsın (Karma Düzen)"] + vardiya_secenekleri
-                                        def_var_idx = 0
-                                    else:
-                                        v_secenekler = vardiya_secenekleri
-                                        def_var_idx = 1 if "Akşamcı" in str(row['haftalik_vardiya']) else 2 if "Tam" in str(row['haftalik_vardiya']) else 0
-                                        
-                                    guncel_vardiya = st.radio("Vardiya Değiştir:", v_secenekler, index=def_var_idx)
-                                
-                                c1, c2, c3 = st.columns(3)
-                                if c1.form_submit_button("🔄 Güncelle"):
-                                    yeni_izin_str = ", ".join(guncel_izin) if len(guncel_izin) > 0 else "İzin Yok"
-                                    
-                                    if is_karma and guncel_vardiya == "Aynı Kalsın (Karma Düzen)":
-                                        final_vardiya = str(row['haftalik_vardiya'])
-                                    else:
-                                        final_vardiya = str(guncel_vardiya)
-                                        
-                                    supabase.table('talepler').update({'izin_gunu': yeni_izin_str, 'haftalik_vardiya': final_vardiya}).eq('id', row['id']).execute()
-                                    st.rerun()
-                                if c2.form_submit_button("⚠️ İptal Et"):
-                                    supabase.table('talepler').update({'durum': 'Beklemede'}).eq('id', row['id']).execute()
-                                    st.rerun()
-                                if c3.form_submit_button("🗑️ Sil"):
-                                    supabase.table('talepler').delete().eq('id', row['id']).execute()
-                                    st.rerun()
-                else: st.info("Onaylanmış talep yok.")
-            
-            st.divider()
-            st.subheader("👀 Canlı Taslak Önizlemesi")
-            taslak_df = get_taslak_df()
-            if not taslak_df.empty: 
-                tabloyu_ciz(taslak_df)
+                bekleyen = df_t[df_t["durum"] == "Beklemede"]
+                for _, row in bekleyen.iterrows():
+                    p_name = str(row['personel']).split(' (')[0]
+                    with st.expander(f"⏳ {p_name} | İzin: {row['izin_gunu']}"):
+                        st.write(f"Talep Edilen: {row['haftalik_vardiya']}")
+                        with st.form(key=f"onay_{row['id']}"):
+                            is_karma = "Karma" in str(row['haftalik_vardiya'])
+                            v_options = ["Kendi Karma Düzeni" if is_karma else "Kendi Seçimi"] + vardiya_secenekleri
+                            yeni_v = st.radio("Kararınız:", v_options)
+                            c1, c2 = st.columns(2)
+                            if c1.form_submit_button("✅ Onayla"):
+                                final_v = str(row['haftalik_vardiya']) if "Kendi" in yeni_v else yeni_v
+                                supabase.table('talepler').update({'haftalik_vardiya': final_v, 'durum': 'Onaylandı'}).eq('id', row['id']).execute(); st.rerun()
+                            if c2.form_submit_button("❌ Reddet"):
+                                supabase.table('talepler').delete().eq('id', row['id']).execute(); st.rerun()
 
         with tab_m:
-            st.subheader("🛠️ Manuel Vardiya Atama")
+            st.subheader("🛠️ Manuel Atama")
             res_k = supabase.table('kullanicilar').select('isim, email').eq('durum', 'Onaylandı').neq('rol', 'Yonetici').execute()
-            aktif_personel_listesi = [f"{k['isim']} ({k['email']})" for k in res_k.data] if res_k.data else []
-            
-            if len(aktif_personel_listesi) > 0:
-                with st.form("manuel_atama"):
-                    secilen_kisi = st.selectbox("Personel:", aktif_personel_listesi)
-                    secilen_izin = st.multiselect("İzinli/Boş Günler:", gunler)
-                    secilen_vardiya = st.radio("Vardiya:", vardiya_secenekleri)
-                    if st.form_submit_button("Sisteme İşle (Onaylı)"):
-                        izin_str = ", ".join(secilen_izin) if len(secilen_izin) > 0 else "İzin Yok"
-                        supabase.table('talepler').delete().eq('personel', secilen_kisi).execute()
-                        yeni_manuel = {"personel": secilen_kisi, "izin_gunu": izin_str, "haftalik_vardiya": secilen_vardiya, "neden": "Yönetici Manuel Atama", "durum": "Onaylandı"}
-                        supabase.table('talepler').insert(yeni_manuel).execute()
-                        st.success("Veritabanına eklendi!"); st.rerun()
-            else:
-                st.warning("Sistemde aktif personel bulunmuyor.")
+            aktif_list = [f"{k['isim']} ({k['email']})" for k in res_k.data] if res_k.data else []
+            if aktif_list:
+                with st.form("manuel"):
+                    p_sel = st.selectbox("Personel:", aktif_list)
+                    i_sel = st.multiselect("İzinli:", gunler)
+                    v_sel = st.radio("Vardiya:", vardiya_secenekleri)
+                    if st.form_submit_button("Sisteme İşle"):
+                        supabase.table('talepler').delete().eq('personel', p_sel).execute()
+                        supabase.table('talepler').insert({"personel": p_sel, "izin_gunu": ", ".join(i_sel), "haftalik_vardiya": v_sel, "durum": "Onaylandı"}).execute(); st.success("Eklendi")
 
         with tab_y:
-            st.subheader("Haftalık Operasyon Kontrolü")
-            if st.button("🔄 Yeni Haftaya Başla (Sıfırla)"):
+            st.subheader("Operasyon")
+            if st.button("🔄 Sıfırla"):
                 supabase.table('ayarlar').update({'deger': 'GIZLI'}).eq('ayar_adi', 'yayin_durumu').execute()
-                supabase.table('talepler').delete().neq('id', 0).execute() 
-                st.success("Veritabanı sıfırlandı. Tertemiz bir haftaya başlandı."); st.rerun()
-            
-            st.divider()
-            col_yayin, col_mail = st.columns(2)
-            with col_yayin:
-                if st.button("🚀 Listeyi Kesinleştir ve Yayınla"):
-                    taslak_df = get_taslak_df()
-                    if not taslak_df.empty:
-                        supabase.table('vardiyalar').delete().neq('personel', 'x').execute()
-                        for _, row in taslak_df.iterrows():
-                            v_data = {"personel": row["Personel"]}
-                            for g in gunler: v_data[g] = row[g]
-                            supabase.table('vardiyalar').insert(v_data).execute()
-                        supabase.table('ayarlar').update({'deger': 'YAYINLANDI'}).eq('ayar_adi', 'yayin_durumu').execute()
-                        supabase.table('talepler').delete().neq('id', 0).execute()
-                        st.success("Liste Bulut'a kaydedildi ve yayınlandı!"); st.rerun()
-                    else: st.warning("Onaylı plan yok.")
-            with col_mail:
-                if st.button("📧 Yayın Maili At"):
-                    st.success("Mail sistemi hazır.")
+                supabase.table('talepler').delete().neq('id', 0).execute(); st.rerun()
+            if st.button("🚀 Listeyi Yayınla"):
+                taslak = get_taslak_df()
+                if not taslak.empty:
+                    supabase.table('vardiyalar').delete().neq('personel', 'x').execute()
+                    for _, r in taslak.iterrows():
+                        v_d = {"personel": r["Personel"]}
+                        for g in gunler: v_d[g] = r[g]
+                        supabase.table('vardiyalar').insert(v_d).execute()
+                    supabase.table('ayarlar').update({'deger': 'YAYINLANDI'}).eq('ayar_adi', 'yayin_durumu').execute(); st.success("Yayınlandı")
 
         with tab_b:
-            st.subheader("İş Başvuruları")
+            st.subheader("İK")
             res_b = supabase.table('basvurular').select('*').execute()
             if res_b.data:
                 df_b = pd.DataFrame(res_b.data)
-                bekleyen_b = df_b[df_b["durum"] == "İnceleniyor"]
-                for _, row in bekleyen_b.iterrows():
-                    with st.expander(f"👤 {row['ad_soyad']} - {row['pozisyon']} ({row.get('calisma_tipi', 'Tam Zamanlı')})"):
-                        st.write(f"Tel: {row['telefon']} | Mail: {row['eposta']}\n\nTecrübe: {row['tecrube']}")
-                        c1, c2, c3 = st.columns(3)
-                        if c1.button("Kabul", key=f"bk_{row['id']}"): 
-                            supabase.table('basvurular').update({'durum': 'Kabul'}).eq('id', row['id']).execute(); st.rerun()
-                        if c2.button("Red", key=f"br_{row['id']}"): 
-                            supabase.table('basvurular').update({'durum': 'Red'}).eq('id', row['id']).execute(); st.rerun()
-                        if c3.button("Sil", key=f"bs_{row['id']}"): 
-                            supabase.table('basvurular').delete().eq('id', row['id']).execute(); st.rerun()
-            else: st.info("İncelenmeyi bekleyen başvuru yok.")
-            
+                for _, row in df_b[df_b["durum"] == "İnceleniyor"].iterrows():
+                    with st.expander(f"👤 {row['ad_soyad']}"):
+                        st.write(f"Tel: {row['telefon']} | Tecrübe: {row['tecrube']}")
+                        if st.button("Kabul", key=f"bk_{row['id']}"): supabase.table('basvurular').update({'durum': 'Kabul'}).eq('id', row['id']).execute(); st.rerun()
+
     elif sayfa == "Sistem Tasarımı" and st.session_state.kullanici_tipi == "Yonetici":
-        st.header("🎨 Sistemi Özelleştir")
-        st.write("Sitenizin arayüzünü bir WordPress paneli gibi kolayca özelleştirin.")
-        st.divider()
-        
+        st.header("🎨 Tasarım")
         c1, c2 = st.columns(2)
         with c1:
-            st.write("**1. Firma Logosu**")
-            st.caption("Sol menüde ve giriş ekranında en üstte görünür.")
-            if os.path.exists(LOGO_PATH): 
-                st.image(LOGO_PATH, width=150)
-            yeni_logo = st.file_uploader("Yeni Logo Yükle (PNG/JPG)", type=['png','jpg','jpeg'], key="logo_up")
-            if yeni_logo is not None:
-                with open(LOGO_PATH, "wb") as f: f.write(yeni_logo.getbuffer())
-                st.success("Logo başarıyla kaydedildi! Sayfayı yenilediğinizde (F5) aktif olacak.")
-                
-            if st.button("🗑️ Logoyu Kaldır") and os.path.exists(LOGO_PATH):
-                os.remove(LOGO_PATH); st.rerun()
-                
+            if os.path.exists(LOGO_PATH): st.image(LOGO_PATH, width=150)
+            l_up = st.file_uploader("Logo:")
+            if l_up:
+                with open(LOGO_PATH, "wb") as f: f.write(l_up.getbuffer())
+                st.success("Kaydedildi. Yenileyin.")
         with c2:
-            st.write("**2. Arka Plan Görseli**")
-            st.caption("Sitenin tüm arka planını kaplar (Açık renkli fotolar önerilir).")
-            if os.path.exists(BG_PATH): 
-                st.image(BG_PATH, width=250)
-            yeni_bg = st.file_uploader("Yeni Arka Plan Yükle (PNG/JPG)", type=['png','jpg','jpeg'], key="bg_up")
-            if yeni_bg is not None:
-                with open(BG_PATH, "wb") as f: f.write(yeni_bg.getbuffer())
-                st.success("Arka plan başarıyla kaydedildi! Sayfayı yenilediğinizde (F5) aktif olacak.")
-                
-            if st.button("🗑️ Arka Planı Kaldır") and os.path.exists(BG_PATH):
-                os.remove(BG_PATH); st.rerun()
+            if os.path.exists(BG_PATH): st.image(BG_PATH, width=250)
+            b_up = st.file_uploader("Arka Plan:")
+            if b_up:
+                with open(BG_PATH, "wb") as f: f.write(b_up.getbuffer())
+                st.success("Kaydedildi. Yenileyin.")
