@@ -362,7 +362,6 @@ if st.session_state.giris_yapildi:
                     st.info("ℹ️ Part-Time personel olarak sadece **ÇALIŞACAĞINIZ** günleri seçiniz.")
                     secilen_gunler = st.multiselect("✅ ÇALIŞACAĞINIZ Günleri Seçiniz:", gunler)
                 else:
-                    # YENİ: İzin İstemiyorum seçeneği eklendi
                     st.info("ℹ️ İzin kullanmak istemiyorsanız ilgili seçeneği seçebilirsiniz.")
                     izin_secenekleri = ["❌ İzin İstemiyorum (Tam Hafta Çalışacağım)"] + gunler
                     secilen_gun = st.selectbox("🌴 İZİNLİ Olacağınız Günü Seçiniz:", izin_secenekleri)
@@ -377,7 +376,6 @@ if st.session_state.giris_yapildi:
                         if st.session_state.calisma_tipi == "Part-Time":
                             izin_listesi = [g for g in gunler if g not in secilen_gunler]
                         else:
-                            # İzin istemiyorum derse listeyi boş bırak
                             if secilen_gun == "❌ İzin İstemiyorum (Tam Hafta Çalışacağım)":
                                 izin_listesi = []
                             else:
@@ -393,7 +391,12 @@ if st.session_state.giris_yapildi:
                         st.success("Talebiniz veritabanına işlendi ve yönetime iletildi.")
                     
         with tab2:
-            st.info("💡 Yönetimin şu ana kadar onayladığı güncel durumu gösterir.")
+            # YENİ: Personel için Canlı Taslak Yenileme Butonu
+            c1, c2 = st.columns([4, 1])
+            with c1: st.info("💡 Yönetimin şu ana kadar onayladığı güncel durumu gösterir.")
+            with c2: 
+                if st.button("🔄 Verileri Yenile", key="pers_yenile", use_container_width=True): st.rerun()
+                
             taslak_df = get_taslak_df()
             if not taslak_df.empty: 
                 tabloyu_ciz(taslak_df)
@@ -476,10 +479,15 @@ if st.session_state.giris_yapildi:
                             st.info("💡 Yönetici hesaplarında çalışma veya vardiya tipi aranmaz.")
 
         with tab_t:
+            # YENİ: Yönetici için Talepler Yenileme Butonu
+            c1, c2 = st.columns([4, 1])
+            with c1: st.subheader("1. Bekleyen Talepler")
+            with c2: 
+                if st.button("🔄 Talepleri Yenile", key="yonetici_yenile", use_container_width=True): st.rerun()
+            
             res_t = supabase.table('talepler').select('*').execute()
             df_t = pd.DataFrame(res_t.data) if res_t.data else pd.DataFrame()
             
-            st.subheader("1. Bekleyen Talepler")
             if not df_t.empty:
                 bekleyen_talepler = df_t[df_t["durum"] == "Beklemede"]
                 if len(bekleyen_talepler) > 0:
