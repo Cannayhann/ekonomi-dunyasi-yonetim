@@ -39,7 +39,6 @@ def tema_uygula():
                 background-position: center;
                 background-attachment: fixed;
             }}
-            /* İçeriği okunaklı yapmak için şeffaf beyaz bir cam efekti veriyoruz */
             .block-container {{
                 background-color: rgba(255, 255, 255, 0.92);
                 padding: 2rem;
@@ -65,7 +64,7 @@ except Exception as e:
     st.error("⚠️ Veritabanı bağlantı hatası! Lütfen Streamlit Secrets ayarlarınızı kontrol edin.")
     st.stop()
 
-# --- VERİ ÇEKME VE YARDIMCI FONKSİYONLAR ---
+# --- VERİ ÇEKME FONKSİYONLARI ---
 def get_yayin_durumu():
     try:
         res = supabase.table('ayarlar').select('deger').eq('ayar_adi', 'yayin_durumu').execute()
@@ -103,11 +102,9 @@ def style_status(v):
     else: c = ""
     return f'background-color: {c}; color: white' if c else ''
 
-# MÜHENDİSLİK: Tabloyu çizerken parantez içindeki mailleri silen zeki fonksiyon
 def tabloyu_ciz(df):
     df_gorsel = df.copy()
     if 'Personel' in df_gorsel.columns:
-        # Ekrana yazdırırken '(email)' kısmını maskeliyoruz
         df_gorsel['Personel'] = df_gorsel['Personel'].apply(lambda x: str(x).split(' (')[0] if ' (' in str(x) else x)
     st.table(df_gorsel.style.map(style_status, subset=gunler))
 
@@ -298,7 +295,7 @@ if st.session_state.giris_yapildi:
     
     with st.sidebar:
         if os.path.exists(LOGO_PATH):
-            st.image(LOGO_PATH, use_column_width=True)
+            st.image(LOGO_PATH, use_container_width=True)
             st.divider()
             
         if os.path.exists(pp_path): st.image(pp_path, width=150)
@@ -308,8 +305,9 @@ if st.session_state.giris_yapildi:
         st.caption(f"{'👑 Yönetici' if st.session_state.kullanici_tipi == 'Yonetici' else 'Çalışan'}")
         st.divider()
         
+        # --- MENÜYE TASARIM SEKMESİ EKLENDİ ---
         if st.session_state.kullanici_tipi == "Yonetici":
-            menu_secenekleri = ["Yönetici Paneli", "Kesinleşen Liste", "Profilim"]
+            menu_secenekleri = ["Yönetici Paneli", "Kesinleşen Liste", "Sistem Tasarımı", "Profilim"]
         else:
             menu_secenekleri = ["Vardiya İşlemleri", "Profilim"]
             
@@ -331,9 +329,10 @@ if st.session_state.giris_yapildi:
             st.subheader("Fotoğraf")
             if os.path.exists(pp_path): st.image(pp_path, width=200)
             yuklenen_foto = st.file_uploader("Yeni Fotoğraf Yükle (PNG/JPG)", type=["png", "jpg", "jpeg"])
+            # Sonsuz döngüden kaçınmak için st.rerun kaldırıldı, sessizce kaydediliyor
             if yuklenen_foto is not None:
                 with open(pp_path, "wb") as f: f.write(yuklenen_foto.getbuffer())
-                st.success("Yüklendi!"); st.rerun()
+                st.success("Yüklendi! Yeni resminiz bir sonraki işlemde görünür olacaktır.")
 
         with col_bilgi:
             yeni_isim = st.text_input("Ad Soyad:", value=str(u_data["isim"]))
@@ -393,7 +392,7 @@ if st.session_state.giris_yapildi:
             st.info("💡 Yönetimin şu ana kadar onayladığı güncel durumu gösterir.")
             taslak_df = get_taslak_df()
             if not taslak_df.empty: 
-                tabloyu_ciz(taslak_df) # Maskeli tablo fonksiyonunu kullanıyoruz
+                tabloyu_ciz(taslak_df)
             else: st.warning("Henüz onaylanmış bir plan yok.")
 
         with tab3:
@@ -402,7 +401,7 @@ if st.session_state.giris_yapildi:
                 if res_v.data:
                     df_v = pd.DataFrame(res_v.data)
                     df_v.rename(columns={'personel': 'Personel'}, inplace=True)
-                    tabloyu_ciz(df_v) # Maskeli tablo fonksiyonunu kullanıyoruz
+                    tabloyu_ciz(df_v)
                 else: st.warning("Liste veritabanında boş.")
             else: st.warning("⚠️ Kesinleşmiş liste henüz yayınlanmamıştır.")
 
@@ -413,14 +412,13 @@ if st.session_state.giris_yapildi:
             if res_v.data:
                 df_v = pd.DataFrame(res_v.data)
                 df_v.rename(columns={'personel': 'Personel'}, inplace=True)
-                tabloyu_ciz(df_v) # Maskeli tablo fonksiyonunu kullanıyoruz
+                tabloyu_ciz(df_v)
         else: st.warning("⚠️ Yayınlanmış liste yok.")
 
     elif sayfa == "Yönetici Paneli" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("👑 Yönetim Kontrol Merkezi")
         
-        # --- YENİ EKLENEN TEMA VE TASARIM SEKMESİ ---
-        tab_k, tab_t, tab_m, tab_y, tab_b, tab_tema = st.tabs(["👥 Kullanıcılar", "📥 Gelen Talepler", "🛠️ Manuel Plan", "🚀 Yayınlama", "👔 İK", "🎨 Tasarım"])
+        tab_k, tab_t, tab_m, tab_y, tab_b = st.tabs(["👥 Kullanıcılar", "📥 Gelen Talepler", "🛠️ Manuel Plan", "🚀 Yayınlama", "👔 İK"])
         
         with tab_k:
             res_users = supabase.table('kullanicilar').select('*').execute()
@@ -605,33 +603,37 @@ if st.session_state.giris_yapildi:
                             supabase.table('basvurular').delete().eq('id', row['id']).execute(); st.rerun()
             else: st.info("İncelenmeyi bekleyen başvuru yok.")
             
-        # --- YENİ EKLENEN TEMA YÖNETİMİ SEKMESİ ---
-        with tab_tema:
-            st.subheader("🎨 Sistemi Özelleştir")
-            st.write("Sitenizin arayüzünü bir WordPress paneli gibi kolayca özelleştirin.")
-            st.divider()
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                st.write("**1. Firma Logosu**")
-                st.caption("Sol menüde ve giriş ekranında en üstte görünür.")
-                if os.path.exists(LOGO_PATH): 
-                    st.image(LOGO_PATH, width=150)
-                yeni_logo = st.file_uploader("Yeni Logo Yükle (PNG/JPG)", type=['png','jpg','jpeg'], key="logo_up")
-                if yeni_logo:
-                    with open(LOGO_PATH, "wb") as f: f.write(yeni_logo.getbuffer())
-                    st.success("Logo başarıyla güncellendi!"); st.rerun()
-                if st.button("🗑️ Logoyu Kaldır") and os.path.exists(LOGO_PATH):
-                    os.remove(LOGO_PATH); st.rerun()
-                    
-            with c2:
-                st.write("**2. Arka Plan Görseli**")
-                st.caption("Sitenin tüm arka planını kaplar (Açık renkli fotolar önerilir).")
-                if os.path.exists(BG_PATH): 
-                    st.image(BG_PATH, width=250)
-                yeni_bg = st.file_uploader("Yeni Arka Plan Yükle (PNG/JPG)", type=['png','jpg','jpeg'], key="bg_up")
-                if yeni_bg:
-                    with open(BG_PATH, "wb") as f: f.write(yeni_bg.getbuffer())
-                    st.success("Arka plan başarıyla güncellendi!"); st.rerun()
-                if st.button("🗑️ Arka Planı Kaldır") and os.path.exists(BG_PATH):
-                    os.remove(BG_PATH); st.rerun()
+    # --- YENİ EKLENEN, SOL MENÜDEKİ TASARIM SAYFASI ---
+    elif sayfa == "Sistem Tasarımı" and st.session_state.kullanici_tipi == "Yonetici":
+        st.header("🎨 Sistemi Özelleştir")
+        st.write("Sitenizin arayüzünü bir WordPress paneli gibi kolayca özelleştirin.")
+        st.divider()
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.write("**1. Firma Logosu**")
+            st.caption("Sol menüde ve giriş ekranında en üstte görünür.")
+            if os.path.exists(LOGO_PATH): 
+                st.image(LOGO_PATH, width=150)
+            yeni_logo = st.file_uploader("Yeni Logo Yükle (PNG/JPG)", type=['png','jpg','jpeg'], key="logo_up")
+            # Sonsuz döngü kırıldı:
+            if yeni_logo is not None:
+                with open(LOGO_PATH, "wb") as f: f.write(yeni_logo.getbuffer())
+                st.success("Logo başarıyla kaydedildi! Sayfayı yenilediğinizde (F5) aktif olacak.")
+                
+            if st.button("🗑️ Logoyu Kaldır") and os.path.exists(LOGO_PATH):
+                os.remove(LOGO_PATH); st.rerun()
+                
+        with c2:
+            st.write("**2. Arka Plan Görseli**")
+            st.caption("Sitenin tüm arka planını kaplar (Açık renkli fotolar önerilir).")
+            if os.path.exists(BG_PATH): 
+                st.image(BG_PATH, width=250)
+            yeni_bg = st.file_uploader("Yeni Arka Plan Yükle (PNG/JPG)", type=['png','jpg','jpeg'], key="bg_up")
+            # Sonsuz döngü kırıldı:
+            if yeni_bg is not None:
+                with open(BG_PATH, "wb") as f: f.write(yeni_bg.getbuffer())
+                st.success("Arka plan başarıyla kaydedildi! Sayfayı yenilediğinizde (F5) aktif olacak.")
+                
+            if st.button("🗑️ Arka Planı Kaldır") and os.path.exists(BG_PATH):
+                os.remove(BG_PATH); st.rerun()
