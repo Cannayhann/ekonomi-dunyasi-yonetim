@@ -55,16 +55,19 @@ else:
         df_b_temp["Çalışma Tipi"] = "Tam Zamanlı"
         df_b_temp.to_csv(BASVURU_FILE, index=False)
 
-# YENİ: OTOMATİK ÇÖP ÖĞÜTÜCÜ (Auto-Sanitizer)
+# --- OTOMATİK ÇÖP ÖĞÜTÜCÜ VE ÇİFT KAYIT SİLİCİ ---
 if not os.path.exists(TALEPLER_FILE): 
     pd.DataFrame(columns=["Personel", "İzin Günü", "Haftalık Vardiya", "Neden", "Durum"]).to_csv(TALEPLER_FILE, index=False)
 else:
-    # Sistemi her başlattığında "nan" verisi varsa otomatik olarak siler.
     df_t_check = pd.read_csv(TALEPLER_FILE, dtype=str)
     ilk_uzunluk = len(df_t_check)
-    df_t_check = df_t_check.dropna(subset=["İzin Günü", "Haftalık Vardiya"])
+    df_t_check = df_t_check.dropna(subset=["İzin Günü", "Haftalık Vardiya", "Personel"])
     df_t_check = df_t_check[~df_t_check["İzin Günü"].astype(str).str.contains("nan", case=False, na=False)]
     df_t_check = df_t_check[~df_t_check["Haftalık Vardiya"].astype(str).str.contains("nan", case=False, na=False)]
+    
+    # YENİ KURAL: Aynı kişinin birden fazla talebi varsa sadece en sonuncuyu tut! (Eski denemeleri siler)
+    df_t_check = df_t_check.drop_duplicates(subset=["Personel"], keep="last")
+    
     if len(df_t_check) < ilk_uzunluk:
         df_t_check.to_csv(TALEPLER_FILE, index=False)
 
@@ -361,12 +364,16 @@ else:
         with tab_t:
             df_t = pd.read_csv(TALEPLER_FILE, dtype=str)
             
+            # --- 1. BEKLEYEN TALEPLER ---
             st.subheader("1. Bekleyen Talepler")
             bekleyen_talepler = df_t[df_t["Durum"] == "Beklemede"]
             if len(bekleyen_talepler) > 0:
                 for idx, row in bekleyen_talepler.iterrows():
                     with st.expander(f"⏳ {row['Personel']} | İzin: {row['İzin Günü']} | Vardiya: {row['Haftalık Vardiya']}"):
-                        if pd.notna(row['Neden']) and str(row['Neden']).strip() != "": st.write(f"Not: {row['Neden']}")
+                        # NOT/NEDEN GÖSTERİMİ
+                        if pd.notna(row['Neden']) and str(row['Neden']).strip() != "" and str(row['Neden']).lower() != "nan": 
+                            st.write(f"**Personelin Notu:** {row['Neden']}")
+                            
                         with st.form(key=f"ilk_onay_{idx}"):
                             col_iz, col_var = st.columns(2)
                             with col_iz:
@@ -395,6 +402,7 @@ else:
 
             st.divider()
             
+            # --- 2. ONAYLANANLARI DÜZENLEME & TOPLU SİLME ---
             st.subheader("2. Onaylanmış Talepleri Düzenle / Toplu Temizle")
             onayli_talepler = df_t[df_t["Durum"] == "Onaylandı"]
             
@@ -428,6 +436,10 @@ else:
                         st.checkbox("", key=f"toplu_{idx}")
                     with c_exp:
                         with st.expander(f"✅ {row['Personel']} | İzin: {row['İzin Günü']} | Vardiya: {row['Haftalık Vardiya']}"):
+                            # YENİ: NOT/NEDEN BURAYA DA EKLENDİ
+                            if pd.notna(row['Neden']) and str(row['Neden']).strip() != "" and str(row['Neden']).lower() != "nan": 
+                                st.write(f"**Personelin Notu:** {row['Neden']}")
+                                
                             with st.form(key=f"duzenle_onayli_{idx}"):
                                 col_iz, col_var = st.columns(2)
                                 with col_iz:
