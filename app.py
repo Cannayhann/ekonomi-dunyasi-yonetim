@@ -64,10 +64,7 @@ else:
     df_t_check = df_t_check.dropna(subset=["İzin Günü", "Haftalık Vardiya", "Personel"])
     df_t_check = df_t_check[~df_t_check["İzin Günü"].astype(str).str.contains("nan", case=False, na=False)]
     df_t_check = df_t_check[~df_t_check["Haftalık Vardiya"].astype(str).str.contains("nan", case=False, na=False)]
-    
-    # YENİ KURAL: Aynı kişinin birden fazla talebi varsa sadece en sonuncuyu tut! (Eski denemeleri siler)
     df_t_check = df_t_check.drop_duplicates(subset=["Personel"], keep="last")
-    
     if len(df_t_check) < ilk_uzunluk:
         df_t_check.to_csv(TALEPLER_FILE, index=False)
 
@@ -289,13 +286,33 @@ else:
         st.header("📅 Haftalık Vardiya Planlaması")
         tab1, tab2, tab3 = st.tabs(["✍️ Planımı Gönder", "👀 Onaylananlar (Canlı Taslak)", "📊 Kesinleşen Liste"])
         
+        # YENİ: Oturumdaki kullanıcının çalışma tipini öğreniyoruz
+        df_k_guncel = pd.read_csv(KULLANICI_FILE, dtype=str)
+        aktif_kullanici_data = df_k_guncel[df_k_guncel["Email"] == st.session_state.kullanici_mail].iloc[0]
+        aktif_calisma_tipi = aktif_kullanici_data.get("CalismaTipi", "Tam Zamanlı")
+
         with tab1:
             with st.form("personel_formu", clear_on_submit=True):
-                izin_gunleri = st.multiselect("İzinli / Çalışmadığınız Günler (Part-time iseniz tüm boş günlerinizi seçin):", gunler)
+                # YENİ: ARAYÜZ TERSİNE ÇEVİRME (Frontend Inversion)
+                if aktif_calisma_tipi == "Part-Time":
+                    st.info("ℹ️ Part-Time personel olarak sadece **ÇALIŞACAĞINIZ** günleri seçiniz.")
+                    secilen_gunler = st.multiselect("✅ ÇALIŞACAĞINIZ Günleri Seçiniz:", gunler)
+                else:
+                    st.info("ℹ️ Tam Zamanlı personel olarak **İZİNLİ** (boş) olacağınız günleri seçiniz.")
+                    secilen_gunler = st.multiselect("🌴 İZİNLİ Olacağınız Günleri Seçiniz:", gunler)
+
                 haftalik_shift = st.radio("Vardiyanız:", vardiya_secenekleri)
                 neden = st.text_area("Notunuz (İsteğe Bağlı):")
+                
                 if st.form_submit_button("Planımı Gönder"):
-                    izin_str = ", ".join(izin_gunleri) if len(izin_gunleri) > 0 else "İzin Yok"
+                    # Arka Plan Çevirisi
+                    if aktif_calisma_tipi == "Part-Time":
+                        izin_listesi = [g for g in gunler if g not in secilen_gunler]
+                    else:
+                        izin_listesi = secilen_gunler
+                        
+                    izin_str = ", ".join(izin_listesi) if len(izin_listesi) > 0 else "İzin Yok"
+                    
                     yeni = {"Personel": st.session_state.kullanici_adi, "İzin Günü": izin_str, "Haftalık Vardiya": haftalik_shift, "Neden": neden, "Durum": "Beklemede"}
                     df_t = pd.read_csv(TALEPLER_FILE, dtype=str)
                     pd.concat([df_t, pd.DataFrame([yeni])]).to_csv(TALEPLER_FILE, index=False)
@@ -370,7 +387,6 @@ else:
             if len(bekleyen_talepler) > 0:
                 for idx, row in bekleyen_talepler.iterrows():
                     with st.expander(f"⏳ {row['Personel']} | İzin: {row['İzin Günü']} | Vardiya: {row['Haftalık Vardiya']}"):
-                        # NOT/NEDEN GÖSTERİMİ
                         if pd.notna(row['Neden']) and str(row['Neden']).strip() != "" and str(row['Neden']).lower() != "nan": 
                             st.write(f"**Personelin Notu:** {row['Neden']}")
                             
@@ -378,7 +394,7 @@ else:
                             col_iz, col_var = st.columns(2)
                             with col_iz:
                                 mevcut_izin = [g for g in gunler if g in str(row['İzin Günü'])]
-                                yeni_izin = st.multiselect("İzin:", gunler, default=mevcut_izin)
+                                yeni_izin = st.multiselect("İzinli/Boş Günler:", gunler, default=mevcut_izin)
                             with col_var:
                                 if "Akşamcı" in str(row['Haftalık Vardiya']): def_var_idx = 1
                                 elif "Tam" in str(row['Haftalık Vardiya']): def_var_idx = 2
@@ -436,7 +452,6 @@ else:
                         st.checkbox("", key=f"toplu_{idx}")
                     with c_exp:
                         with st.expander(f"✅ {row['Personel']} | İzin: {row['İzin Günü']} | Vardiya: {row['Haftalık Vardiya']}"):
-                            # YENİ: NOT/NEDEN BURAYA DA EKLENDİ
                             if pd.notna(row['Neden']) and str(row['Neden']).strip() != "" and str(row['Neden']).lower() != "nan": 
                                 st.write(f"**Personelin Notu:** {row['Neden']}")
                                 
@@ -444,7 +459,7 @@ else:
                                 col_iz, col_var = st.columns(2)
                                 with col_iz:
                                     mevcut_izin = [g for g in gunler if g in str(row['İzin Günü'])]
-                                    guncel_izin = st.multiselect("İzin Değiştir:", gunler, default=mevcut_izin)
+                                    guncel_izin = st.multiselect("İzinli/Boş Günler:", gunler, default=mevcut_izin)
                                 with col_var:
                                     if "Akşamcı" in str(row['Haftalık Vardiya']): def_var_idx = 1
                                     elif "Tam" in str(row['Haftalık Vardiya']): def_var_idx = 2
@@ -479,7 +494,7 @@ else:
             if len(aktif_personel_listesi) > 0:
                 with st.form("manuel_atama"):
                     secilen_kisi = st.selectbox("Personel:", aktif_personel_listesi)
-                    secilen_izin = st.multiselect("İzin Günleri:", gunler)
+                    secilen_izin = st.multiselect("İzinli/Boş Günler:", gunler)
                     secilen_vardiya = st.radio("Vardiya:", vardiya_secenekleri)
                     if st.form_submit_button("Sisteme İşle (Onaylı)"):
                         izin_str = ", ".join(secilen_izin) if len(secilen_izin) > 0 else "İzin Yok"
