@@ -51,7 +51,7 @@ if not os.path.exists(YAYIN_FILE):
     with open(YAYIN_FILE, "w") as f: f.write("GIZLI")
 if not os.path.exists(BASVURU_FILE): pd.DataFrame(columns=["Ad Soyad", "Telefon", "E-posta", "Pozisyon", "Tecrübe", "Durum", "Tarih"]).to_csv(BASVURU_FILE, index=False)
 
-# --- MAİL, KOD VE TABLO FONKSİYONLARI ---
+# --- MAİL VE KOD FONKSİYONLARI ---
 def mail_gonder(alici_mail, konu, mesaj_metni):
     try:
         gonderen_mail = st.secrets["email"]["adres"]
@@ -80,7 +80,7 @@ def style_status(v):
     else: c = ""
     return f'background-color: {c}; color: white' if c else ''
 
-# --- CANLI TASLAK OLUŞTURUCU ---
+# --- CANLI TASLAK ---
 def get_taslak_df():
     df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
     aktifler = df_k[df_k["Durum"] == "Onaylandı"]["Isim"].tolist()
@@ -267,7 +267,7 @@ else:
                     st.success("Talebiniz yönetime iletildi.")
                     
         with tab2:
-            st.info("💡 Yönetimin şu ana kadar onayladığı güncel durumu gösterir. Arkadaşlarınızın planına göre kendi planınızı yapabilirsiniz.")
+            st.info("💡 Yönetimin şu ana kadar onayladığı güncel durumu gösterir.")
             taslak_df = get_taslak_df()
             if not taslak_df.empty: st.table(taslak_df.style.map(style_status, subset=gunler))
             else: st.warning("Henüz onaylanmış bir plan yok.")
@@ -291,7 +291,7 @@ else:
     # --- YÖNETİCİ PANELİ ---
     elif sayfa == "Yönetici Paneli" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("👑 Yönetim Kontrol Merkezi")
-        tab_k, tab_t, tab_m, tab_y, tab_b = st.tabs(["👥 Kullanıcılar", "📥 Gelen Talepler (Düzenle)", "🛠️ Manuel Plan", "🚀 Yayınlama", "👔 İK"])
+        tab_k, tab_t, tab_m, tab_y, tab_b = st.tabs(["👥 Kullanıcılar", "📥 Gelen Talepler (Düzenle & Sil)", "🛠️ Manuel Plan", "🚀 Yayınlama", "👔 İK"])
         
         with tab_k:
             df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
@@ -351,41 +351,67 @@ else:
 
             st.divider()
             
-            # --- 2. ONAYLANANLARI DÜZENLEME VE SİLME (YENİ SİL BUTONU) ---
-            st.subheader("2. Onaylanmış Talepleri Düzenle")
+            # --- 2. ONAYLANANLARI DÜZENLEME & TOPLU SİLME ---
+            st.subheader("2. Onaylanmış Talepleri Düzenle / Toplu Temizle")
             onayli_talepler = df_t[df_t["Durum"] == "Onaylandı"]
+            
             if len(onayli_talepler) > 0:
+                # Toplu Seçim Toolbar
+                t1, t2, t3, t4 = st.columns(4)
+                with t1:
+                    if st.button("☑️ Tümünü Seç"):
+                        for i in onayli_talepler.index: st.session_state[f"toplu_{i}"] = True
+                        st.rerun()
+                with t2:
+                    if st.button("🔳 Seçimi Kaldır"):
+                        for i in onayli_talepler.index: st.session_state[f"toplu_{i}"] = False
+                        st.rerun()
+                        
+                # Seçilenleri bulma
+                secilen_idxler = [i for i in onayli_talepler.index if st.session_state.get(f"toplu_{i}", False)]
+                
+                with t3:
+                    if len(secilen_idxler) > 0:
+                        if st.button(f"🗑️ Seçilenleri Sil ({len(secilen_idxler)})", type="primary"):
+                            df_t_guncel = pd.read_csv(TALEPLER_FILE, dtype=str)
+                            df_t_guncel = df_t_guncel.drop(secilen_idxler)
+                            df_t_guncel.to_csv(TALEPLER_FILE, index=False)
+                            for i in secilen_idxler: del st.session_state[f"toplu_{i}"]
+                            st.rerun()
+                st.write("") # Boşluk
+                
+                # Liste
                 for idx, row in onayli_talepler.iterrows():
-                    with st.expander(f"✅ {row['Personel']} | İzin: {row['İzin Günü']} | Vardiya: {row['Haftalık Vardiya']}"):
-                        with st.form(key=f"duzenle_onayli_{idx}"):
-                            col_iz, col_var = st.columns(2)
-                            with col_iz:
-                                try: def_iz_idx = gunler.index(str(row['İzin Günü']))
-                                except: def_iz_idx = 0
-                                guncel_izin = st.selectbox("İzin Gününü Değiştir:", gunler, index=def_iz_idx)
-                            with col_var:
-                                if "Akşamcı" in str(row['Haftalık Vardiya']): def_var_idx = 1
-                                elif "Tam" in str(row['Haftalık Vardiya']): def_var_idx = 2
-                                else: def_var_idx = 0
-                                guncel_vardiya = st.radio("Vardiyayı Değiştir:", vardiya_secenekleri, index=def_var_idx)
-                            
-                            c1, c2, c3 = st.columns(3)
-                            if c1.form_submit_button("🔄 Güncelle"):
-                                df_t_guncel = pd.read_csv(TALEPLER_FILE, dtype=str)
-                                df_t_guncel.at[idx, "İzin Günü"] = str(guncel_izin)
-                                df_t_guncel.at[idx, "Haftalık Vardiya"] = str(guncel_vardiya)
-                                df_t_guncel.to_csv(TALEPLER_FILE, index=False)
-                                st.rerun()
-                            if c2.form_submit_button("⚠️ İptal Et (Beklemeye Al)"):
-                                df_t_guncel = pd.read_csv(TALEPLER_FILE, dtype=str)
-                                df_t_guncel.at[idx, "Durum"] = "Beklemede"
-                                df_t_guncel.to_csv(TALEPLER_FILE, index=False)
-                                st.rerun()
-                            if c3.form_submit_button("🗑️ Kaydı Sil"):
-                                df_t_guncel = pd.read_csv(TALEPLER_FILE, dtype=str)
-                                df_t_guncel = df_t_guncel.drop(idx)
-                                df_t_guncel.to_csv(TALEPLER_FILE, index=False)
-                                st.rerun()
+                    c_chk, c_exp = st.columns([1, 20])
+                    with c_chk:
+                        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+                        st.checkbox("", key=f"toplu_{idx}")
+                    with c_exp:
+                        with st.expander(f"✅ {row['Personel']} | İzin: {row['İzin Günü']} | Vardiya: {row['Haftalık Vardiya']}"):
+                            with st.form(key=f"duzenle_onayli_{idx}"):
+                                col_iz, col_var = st.columns(2)
+                                with col_iz:
+                                    try: def_iz_idx = gunler.index(str(row['İzin Günü']))
+                                    except: def_iz_idx = 0
+                                    guncel_izin = st.selectbox("İzin Değiştir:", gunler, index=def_iz_idx)
+                                with col_var:
+                                    if "Akşamcı" in str(row['Haftalık Vardiya']): def_var_idx = 1
+                                    elif "Tam" in str(row['Haftalık Vardiya']): def_var_idx = 2
+                                    else: def_var_idx = 0
+                                    guncel_vardiya = st.radio("Vardiya Değiştir:", vardiya_secenekleri, index=def_var_idx)
+                                
+                                c1, c2 = st.columns(2)
+                                if c1.form_submit_button("🔄 Güncelle"):
+                                    df_t_guncel = pd.read_csv(TALEPLER_FILE, dtype=str)
+                                    df_t_guncel.at[idx, "İzin Günü"] = str(guncel_izin)
+                                    df_t_guncel.at[idx, "Haftalık Vardiya"] = str(guncel_vardiya)
+                                    df_t_guncel.to_csv(TALEPLER_FILE, index=False)
+                                    st.rerun()
+                                if c2.form_submit_button("⚠️ Onayı İptal Et (Beklemeye Al)"):
+                                    df_t_guncel = pd.read_csv(TALEPLER_FILE, dtype=str)
+                                    df_t_guncel.at[idx, "Durum"] = "Beklemede"
+                                    df_t_guncel.to_csv(TALEPLER_FILE, index=False)
+                                    st.rerun()
             else: st.info("Henüz onaylanmış talep yok.")
             
             st.divider()
@@ -415,30 +441,33 @@ else:
             st.subheader("Haftalık Operasyon Kontrolü")
             if st.button("🔄 Yeni Haftaya Başla (Sıfırla)"):
                 with open(YAYIN_FILE, "w") as f: f.write("GIZLI")
+                # ESKİ TALEPLERİ SIFIRLIYOR (Garbage Collection)
                 pd.DataFrame(columns=["Personel", "İzin Günü", "Haftalık Vardiya", "Neden", "Durum"]).to_csv(TALEPLER_FILE, index=False)
                 st.success("Sıfırlandı."); st.rerun()
             st.divider()
             col_yayin, col_mail = st.columns(2)
-            
-            # --- YAYINLAMA VE OTOMATİK TEMİZLİK ---
             with col_yayin:
                 if st.button("🚀 Listeyi Kesinleştir ve Yayınla"):
                     taslak_df = get_taslak_df()
                     if not taslak_df.empty:
-                        # 1. Kesin listeyi vardiya_duzeni.csv'ye yaz ve yayına al
                         taslak_df.to_csv(VARDIYA_FILE, index=False)
                         with open(YAYIN_FILE, "w") as f: f.write("YAYINLANDI")
                         
-                        # 2. OTOMATİK TEMİZLİK: Eski talepleri uçur
+                        # YAYINLADIKTAN SONRA LİSTEYİ OTOMATİK SIFIRLIYOR
                         pd.DataFrame(columns=["Personel", "İzin Günü", "Haftalık Vardiya", "Neden", "Durum"]).to_csv(TALEPLER_FILE, index=False)
                         
-                        st.success("✅ Liste başarıyla yayınlandı ve talep listesi yeni hafta için temizlendi!")
-                        st.rerun()
+                        st.success("Liste yayınlandı ve talep listesi yeni hafta için temizlendi!"); st.rerun()
                     else: st.warning("Onaylı plan yok.")
-                    
             with col_mail:
                 if st.button("📧 Yayın Maili At"):
-                    st.success("Mail sistemi hazır.")
+                    with open(YAYIN_FILE, "r") as f:
+                        if f.read().strip() == "YAYINLANDI":
+                            onayli_k = df_k[df_k["Durum"] == "Onaylandı"]
+                            with st.spinner("Mailler gönderiliyor..."):
+                                basarili = sum(1 for _, u in onayli_k.iterrows() if mail_gonder(u["Email"], "Haftalık Liste Yayınlandı", "Liste yayınlandı, sisteme girip bakabilirsiniz."))
+                            st.success(f"{basarili} kişiye mail gitti.")
+                        else:
+                            st.error("Önce listeyi yayınlamalısınız!")
 
         with tab_b:
             st.subheader("İş Başvuruları")
