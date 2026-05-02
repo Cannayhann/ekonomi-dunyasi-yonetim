@@ -33,7 +33,7 @@ else:
     
     if "Telefon" not in df_k.columns: df_k["Telefon"] = ""; guncellendi_mi = True
     if "Rol" not in df_k.columns: df_k["Rol"] = "Personel"; guncellendi_mi = True
-    if "CalismaTipi" not in df_k.columns: df_k["CalismaTipi"] = "Tam Zamanlı"; guncellendi_mi = True # YENİ YAMA
+    if "CalismaTipi" not in df_k.columns: df_k["CalismaTipi"] = "Tam Zamanlı"; guncellendi_mi = True
         
     admin_mask = df_k["Email"] == "admin@edavm.com"
     if admin_mask.any():
@@ -46,7 +46,6 @@ else:
         
     if guncellendi_mi: df_k.to_csv(KULLANICI_FILE, index=False)
 
-# Başvuru Dosyası Tamiri
 basvuru_sutunlari = ["Ad Soyad", "Telefon", "E-posta", "Pozisyon", "Çalışma Tipi", "Tecrübe", "Durum", "Tarih"]
 if not os.path.exists(BASVURU_FILE): 
     pd.DataFrame(columns=basvuru_sutunlari).to_csv(BASVURU_FILE, index=False)
@@ -155,7 +154,7 @@ if not st.session_state.giris_yapildi:
                 isim = st.text_input("Adınız Soyadınız")
                 tel = st.text_input("Telefon Numaranız")
                 mail = st.text_input("E-posta Adresiniz").strip().lower()
-                calisma_tipi = st.selectbox("Çalışma Şekliniz", ["Tam Zamanlı", "Part-Time"]) # YENİ ALAN
+                calisma_tipi = st.selectbox("Çalışma Şekliniz", ["Tam Zamanlı", "Part-Time"])
                 sifre = st.text_input("Şifre Belirleyiniz", type="password")
                 
                 if st.form_submit_button("Kayıt Talebi Gönder"):
@@ -197,7 +196,7 @@ if not st.session_state.giris_yapildi:
                 b_tel = st.text_input("Telefon Numaranız")
                 b_mail = st.text_input("E-posta Adresiniz")
                 b_pozisyon = st.selectbox("Başvurulan Pozisyon", ["Satış Danışmanı", "Kasa Görevlisi", "Depo / Lojistik", "E-Ticaret Sorumlusu"])
-                b_calisma_tipi = st.selectbox("Tercih Ettiğiniz Çalışma Şekli", ["Tam Zamanlı", "Part-Time"]) # YENİ ALAN
+                b_calisma_tipi = st.selectbox("Tercih Ettiğiniz Çalışma Şekli", ["Tam Zamanlı", "Part-Time"])
                 b_tecrube = st.text_area("İş Tecrübeleriniz")
                 
                 if st.form_submit_button("Başvurumu İlet"):
@@ -254,7 +253,6 @@ else:
             yeni_isim = st.text_input("Ad Soyad:", value=str(u_data["Isim"]))
             yeni_tel = st.text_input("Telefon:", value=str(u_data["Telefon"]) if pd.notna(u_data["Telefon"]) else "")
             
-            # YENİ EKLENEN PROFİL DÜZENLEME (ÇALIŞMA TİPİ)
             idx_tip = 0 if u_data.get("CalismaTipi", "Tam Zamanlı") == "Tam Zamanlı" else 1
             yeni_tip = st.selectbox("Çalışma Tipi:", ["Tam Zamanlı", "Part-Time"], index=idx_tip)
             
@@ -319,27 +317,38 @@ else:
             bekleyenler = df_k[df_k["Durum"] == "Beklemede"]
             st.subheader("Yeni Kayıtlar")
             for idx, row in bekleyenler.iterrows():
-                # YENİ: Başlıkta çalışma tipi yazıyor
                 with st.expander(f"👤 {row['Isim']} ({row['Email']}) | Tel: {row['Telefon']} | {row.get('CalismaTipi', 'Tam Zamanlı')}"):
                     c1, c2 = st.columns(2)
                     if c1.button("Onayla", key=f"kon_{idx}"):
                         df_k.at[idx, "Durum"] = "Onaylandı"; df_k.to_csv(KULLANICI_FILE, index=False); st.rerun()
                     if c2.button("Reddet", key=f"kred_{idx}"):
                         df_k.at[idx, "Durum"] = "Reddedildi"; df_k.to_csv(KULLANICI_FILE, index=False); st.rerun()
-            st.divider(); st.subheader("Aktif Kullanıcılar")
+            
+            st.divider()
+            st.subheader("Aktif Kullanıcılar")
             aktifler = df_k[df_k["Durum"] == "Onaylandı"]
             for idx, row in aktifler.iterrows():
-                # YENİ: Başlıkta çalışma tipi yazıyor
-                with st.expander(f"⚙️ {row['Isim']} ({row['Rol']} - {row.get('CalismaTipi', 'Tam Zamanlı')})"):
+                # YENİ: Yönetici direkt olarak kullanıcının çalışma tipini panelden güncelleyebilir
+                mevcut_tip = row.get("CalismaTipi", "Tam Zamanlı")
+                with st.expander(f"⚙️ {row['Isim']} ({row['Rol']} - {mevcut_tip})"):
                     st.write(f"Mail: {row['Email']} | Tel: {row['Telefon']} | Şifre: {row['Sifre']}")
+                    
+                    idx_tip = 0 if mevcut_tip == "Tam Zamanlı" else 1
+                    yeni_tip = st.selectbox("Çalışma Tipi:", ["Tam Zamanlı", "Part-Time"], index=idx_tip, key=f"tip_{idx}")
+                    
+                    c1, c2 = st.columns(2)
+                    if c1.button("💾 Tipi Güncelle", key=f"kguncel_{idx}"):
+                        df_k.at[idx, "CalismaTipi"] = yeni_tip
+                        df_k.to_csv(KULLANICI_FILE, index=False)
+                        st.rerun()
+                        
                     if row["Email"] != st.session_state.kullanici_mail: 
-                        if st.button("Kullanıcıyı Sil", key=f"kdel_{idx}"):
+                        if c2.button("🗑️ Kullanıcıyı Sil", key=f"kdel_{idx}"):
                             df_k = df_k.drop(idx); df_k.to_csv(KULLANICI_FILE, index=False); st.rerun()
 
         with tab_t:
             df_t = pd.read_csv(TALEPLER_FILE, dtype=str)
             
-            # --- 1. BEKLEYEN TALEPLER ---
             st.subheader("1. Bekleyen Talepler")
             bekleyen_talepler = df_t[df_t["Durum"] == "Beklemede"]
             if len(bekleyen_talepler) > 0:
@@ -374,7 +383,6 @@ else:
 
             st.divider()
             
-            # --- 2. ONAYLANANLARI DÜZENLEME & TOPLU SİLME ---
             st.subheader("2. Onaylanmış Talepleri Düzenle / Toplu Temizle")
             onayli_talepler = df_t[df_t["Durum"] == "Onaylandı"]
             
@@ -436,7 +444,6 @@ else:
             
             st.divider()
             
-            # --- 3. YÖNETİCİ CANLI TASLAK GÖRÜNÜMÜ ---
             st.subheader("👀 Canlı Taslak Önizlemesi")
             taslak_df = get_taslak_df()
             if not taslak_df.empty: st.table(taslak_df.style.map(style_status, subset=gunler))
@@ -493,7 +500,6 @@ else:
             df_b = pd.read_csv(BASVURU_FILE, dtype=str)
             bekleyen_b = df_b[df_b["Durum"] == "İnceleniyor"]
             for idx, row in bekleyen_b.iterrows():
-                # YENİ: Başvurularda da çalışma tipi görünüyor
                 with st.expander(f"👤 {row['Ad Soyad']} - {row['Pozisyon']} ({row.get('Çalışma Tipi', 'Tam Zamanlı')})"):
                     st.write(f"Tel: {row['Telefon']} | Mail: {row['E-posta']}\n\nTecrübe: {row['Tecrübe']}")
                     c1, c2, c3 = st.columns(3)
