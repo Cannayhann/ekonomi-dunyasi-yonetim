@@ -13,23 +13,43 @@ TALEPLER_FILE = "talepler.csv"
 VARDIYA_FILE = "vardiya_duzeni.csv"
 YAYIN_FILE = "yayin_durumu.txt"
 KULLANICI_FILE = "kullanicilar.csv"
-PROFILE_DIR = "profil_fotograflari" # YENİ: Fotoğrafların tutulacağı klasör
+PROFILE_DIR = "profil_fotograflari"
 
 gunler = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
-
-# Klasör ve Dosya Kontrolleri
 os.makedirs(PROFILE_DIR, exist_ok=True)
 
-if not os.path.exists(KULLANICI_FILE):
-    admin_data = {"Isim": "Yönetim", "Email": "admin@edavm.com", "Sifre": "ayhanlar2026", "Telefon": "05000000000", "Durum": "Onaylandı", "Rol": "Yonetici"}
-    pd.DataFrame([admin_data]).to_csv(KULLANICI_FILE, index=False)
+# --- VERİTABANI KENDİNİ TAMİR ETME VE BAŞLATMA (KRİTİK DÜZELTME) ---
+kullanici_sutunlari = ["Isim", "Email", "Sifre", "Telefon", "Durum", "Rol"]
 
+if not os.path.exists(KULLANICI_FILE):
+    # Dosya yoksa sıfırdan oluştur ve admini ekle
+    admin_data = {"Isim": "Yönetim", "Email": "admin@edavm.com", "Sifre": "ayhanlar2026", "Telefon": "05000000000", "Durum": "Onaylandı", "Rol": "Yonetici"}
+    pd.DataFrame([admin_data], columns=kullanici_sutunlari).to_csv(KULLANICI_FILE, index=False)
+else:
+    # Dosya varsa eksikleri tamamla ve admini zorla ekle
+    df_k = pd.read_csv(KULLANICI_FILE)
+    guncellendi_mi = False
+    
+    if "Telefon" not in df_k.columns:
+        df_k["Telefon"] = ""
+        guncellendi_mi = True
+    if "Rol" not in df_k.columns:
+        df_k["Rol"] = "Personel"
+        guncellendi_mi = True
+        
+    if "admin@edavm.com" not in df_k["Email"].values:
+        admin_data = {"Isim": "Yönetim", "Email": "admin@edavm.com", "Sifre": "ayhanlar2026", "Telefon": "05000000000", "Durum": "Onaylandı", "Rol": "Yonetici"}
+        df_k = pd.concat([df_k, pd.DataFrame([admin_data])], ignore_index=True)
+        guncellendi_mi = True
+        
+    if guncellendi_mi:
+        df_k.to_csv(KULLANICI_FILE, index=False)
+
+# Diğer Dosyalar
 if not os.path.exists(TALEPLER_FILE):
     pd.DataFrame(columns=["Personel", "İzin Günü", "Haftalık Vardiya", "Neden", "Durum"]).to_csv(TALEPLER_FILE, index=False)
-
 if not os.path.exists(VARDIYA_FILE):
     pd.DataFrame(columns=["Personel"] + gunler).to_csv(VARDIYA_FILE, index=False)
-
 if not os.path.exists(YAYIN_FILE):
     with open(YAYIN_FILE, "w") as f: f.write("GIZLI")
 
@@ -67,6 +87,7 @@ if not st.session_state.giris_yapildi:
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
+        # Yönetici girişi kalktı, herkes buradan giriyor.
         sekme = st.radio("İşlem Seçiniz", ["🔑 Giriş Yap", "📝 Kayıt Ol", "❓ Şifremi Unuttum"], horizontal=True)
 
         if sekme == "🔑 Giriş Yap":
@@ -77,7 +98,12 @@ if not st.session_state.giris_yapildi:
                 user = df_k[(df_k["Email"] == email_in) & (df_k["Sifre"] == str(sifre_in))]
                 if not user.empty:
                     if user.iloc[0]["Durum"] == "Onaylandı":
-                        st.session_state.update({"giris_yapildi": True, "kullanici_tipi": user.iloc[0]["Rol"], "kullanici_adi": user.iloc[0]["Isim"], "kullanici_mail": email_in})
+                        st.session_state.update({
+                            "giris_yapildi": True, 
+                            "kullanici_tipi": user.iloc[0]["Rol"], 
+                            "kullanici_adi": user.iloc[0]["Isim"], 
+                            "kullanici_mail": email_in
+                        })
                         st.rerun()
                     else:
                         st.warning("⏳ Hesabınız onay bekliyor.")
@@ -133,7 +159,6 @@ if not st.session_state.giris_yapildi:
 # ANA SİSTEM (GİRİŞ YAPILDIKTAN SONRA)
 # ==========================================
 else:
-    # YENİ EKLENEN: PROFİL FOTOĞRAFI GÖSTERİMİ
     pp_path = os.path.join(PROFILE_DIR, f"{st.session_state.kullanici_mail}.png")
     
     with st.sidebar:
@@ -143,7 +168,7 @@ else:
             st.write("👤 *(Fotoğraf Yok)*")
             
         st.title(f"{st.session_state.kullanici_adi}")
-        st.caption(f"{st.session_state.kullanici_tipi}")
+        st.caption(f"{'👑 Yönetici' if st.session_state.kullanici_tipi == 'Yonetici' else 'Çalışan'}")
         st.divider()
         
         menu_secenekleri = ["Vardiya İşlemleri", "Profilim"]
@@ -158,7 +183,7 @@ else:
 
     with open(YAYIN_FILE, "r") as f: yayin_durumu = f.read().strip()
 
-    # --- 1. SAYFA: PROFİLİM (HERKES İÇİN) ---
+    # --- 1. SAYFA: PROFİLİM ---
     if sayfa == "Profilim":
         st.header("👤 Profilimi Düzenle")
         df_k = pd.read_csv(KULLANICI_FILE)
@@ -170,11 +195,9 @@ else:
             st.subheader("Fotoğraf")
             if os.path.exists(pp_path):
                 st.image(pp_path, width=200)
-            
             yuklenen_foto = st.file_uploader("Yeni Fotoğraf Yükle (PNG/JPG)", type=["png", "jpg", "jpeg"])
             if yuklenen_foto is not None:
-                with open(pp_path, "wb") as f:
-                    f.write(yuklenen_foto.getbuffer())
+                with open(pp_path, "wb") as f: f.write(yuklenen_foto.getbuffer())
                 st.success("Fotoğraf başarıyla yüklendi!")
                 st.rerun()
 
@@ -188,10 +211,10 @@ else:
                 df_k.loc[df_k["Email"] == st.session_state.kullanici_mail, ["Isim", "Telefon", "Sifre"]] = [yeni_isim, yeni_tel, yeni_sifre]
                 df_k.to_csv(KULLANICI_FILE, index=False)
                 st.session_state.kullanici_adi = yeni_isim
-                st.success("Profil bilgileriniz başarıyla güncellendi.")
+                st.success("Profil bilgileriniz güncellendi.")
                 st.rerun()
 
-    # --- 2. SAYFA: VARDİYA İŞLEMLERİ (HERKES İÇİN) ---
+    # --- 2. SAYFA: VARDİYA İŞLEMLERİ ---
     elif sayfa == "Vardiya İşlemleri":
         st.header("📅 Haftalık Vardiya Planlaması")
         tab1, tab2 = st.tabs(["✍️ Planımı Gönder", "📊 Kesinleşen Liste"])
@@ -219,12 +242,12 @@ else:
                         return f'background-color: {c}; color: white'
                     st.table(df_v.style.map(style_status, subset=gunler))
             else:
-                st.warning("⚠️ Bu haftanın listesi henüz yönetim tarafından yayınlanmamıştır.")
+                st.warning("⚠️ Bu haftanın listesi henüz yayınlanmamıştır.")
 
-    # --- 3. SAYFA: YÖNETİCİ PANELİ (SADECE ADMİN) ---
+    # --- 3. SAYFA: YÖNETİCİ PANELİ ---
     elif sayfa == "Yönetici Paneli" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("👑 Yönetim Kontrol Merkezi")
-        tab_k, tab_v = st.tabs(["👥 Kullanıcı Yönetimi", "📋 Vardiya ve Yayın"])
+        tab_k, tab_v = st.tabs(["👥 Kullanıcı Yönetimi", "📋 Vardiya Onay & Yayın"])
         
         with tab_k:
             df_k = pd.read_csv(KULLANICI_FILE)
@@ -247,22 +270,22 @@ else:
                 st.info("Bekleyen kayıt yok.")
                 
             st.divider()
-            st.subheader("Sistemdeki Aktif Kullanıcılar")
+            st.subheader("Aktif Kullanıcılar")
             aktifler = df_k[df_k["Durum"] == "Onaylandı"]
             for idx, row in aktifler.iterrows():
                 with st.expander(f"⚙️ {row['Isim']} ({row['Rol']}) | Tel: {row['Telefon']}"):
                     st.write(f"**Email:** {row['Email']} | **Şifre:** {row['Sifre']}")
-                    if row["Email"] != st.session_state.kullanici_mail: # Admin kendini silemesin
+                    if row["Email"] != st.session_state.kullanici_mail: 
                         if st.button("Kullanıcıyı Sil", key=f"kdel_{idx}"):
                             df_k = df_k.drop(idx)
                             df_k.to_csv(KULLANICI_FILE, index=False)
                             st.rerun()
 
         with tab_v:
-            if st.button("🔄 Yeni Haftaya Başla (Listeyi Sıfırla)"):
+            if st.button("🔄 Yeni Haftaya Başla (Mevcut Listeyi Gizle)"):
                 with open(YAYIN_FILE, "w") as f: f.write("GIZLI")
                 pd.DataFrame(columns=["Personel", "İzin Günü", "Haftalık Vardiya", "Neden", "Durum"]).to_csv(TALEPLER_FILE, index=False)
-                st.success("Yeni haftaya geçildi.")
+                st.success("Sistem sıfırlandı. Yeni talepler bekleniyor.")
                 st.rerun()
 
             st.divider()
@@ -275,8 +298,7 @@ else:
                     with st.expander(f"📌 {row['Personel']} | İzin: {row['İzin Günü']} | Vardiya: {row['Haftalık Vardiya']}"):
                         if pd.notna(row['Neden']) and str(row['Neden']).strip() != "":
                             st.write(f"**Not:** {row['Neden']}")
-                            
-                        # Maili bul
+                        
                         user_email_list = df_k[df_k['Isim'] == row['Personel']]['Email'].values
                         user_email = user_email_list[0] if len(user_email_list) > 0 else None
 
@@ -284,12 +306,12 @@ else:
                         if c1.button("Onayla", key=f"von_{idx}"):
                             df_t.at[idx, "Durum"] = "Onaylandı"
                             df_t.to_csv(TALEPLER_FILE, index=False)
-                            if user_email: mail_gonder(user_email, "Vardiyanız Onaylandı", "Talebini onaylanmıştır.")
+                            if user_email: mail_gonder(user_email, "Vardiyanız Onaylandı", "Talebiniz onaylanmıştır.")
                             st.rerun()
                         if c2.button("Reddet", key=f"vred_{idx}"):
                             df_t.at[idx, "Durum"] = "Reddedildi"
                             df_t.to_csv(TALEPLER_FILE, index=False)
-                            if user_email: mail_gonder(user_email, "Vardiyanız Reddedildi", "Talebiniz reddedilmiştir. Yönetimle görüşün.")
+                            if user_email: mail_gonder(user_email, "Vardiyanız Reddedildi", "Talebiniz reddedilmiştir.")
                             st.rerun()
             else:
                 st.info("Bekleyen talep yok.")
