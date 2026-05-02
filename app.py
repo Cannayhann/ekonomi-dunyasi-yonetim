@@ -55,7 +55,19 @@ else:
         df_b_temp["Çalışma Tipi"] = "Tam Zamanlı"
         df_b_temp.to_csv(BASVURU_FILE, index=False)
 
-if not os.path.exists(TALEPLER_FILE): pd.DataFrame(columns=["Personel", "İzin Günü", "Haftalık Vardiya", "Neden", "Durum"]).to_csv(TALEPLER_FILE, index=False)
+# YENİ: OTOMATİK ÇÖP ÖĞÜTÜCÜ (Auto-Sanitizer)
+if not os.path.exists(TALEPLER_FILE): 
+    pd.DataFrame(columns=["Personel", "İzin Günü", "Haftalık Vardiya", "Neden", "Durum"]).to_csv(TALEPLER_FILE, index=False)
+else:
+    # Sistemi her başlattığında "nan" verisi varsa otomatik olarak siler.
+    df_t_check = pd.read_csv(TALEPLER_FILE, dtype=str)
+    ilk_uzunluk = len(df_t_check)
+    df_t_check = df_t_check.dropna(subset=["İzin Günü", "Haftalık Vardiya"])
+    df_t_check = df_t_check[~df_t_check["İzin Günü"].astype(str).str.contains("nan", case=False, na=False)]
+    df_t_check = df_t_check[~df_t_check["Haftalık Vardiya"].astype(str).str.contains("nan", case=False, na=False)]
+    if len(df_t_check) < ilk_uzunluk:
+        df_t_check.to_csv(TALEPLER_FILE, index=False)
+
 if not os.path.exists(VARDIYA_FILE): pd.DataFrame(columns=["Personel"] + gunler).to_csv(VARDIYA_FILE, index=False)
 if not os.path.exists(YAYIN_FILE):
     with open(YAYIN_FILE, "w") as f: f.write("GIZLI")
@@ -92,7 +104,6 @@ def style_status(v):
 # --- CANLI TASLAK ---
 def get_taslak_df():
     df_k = pd.read_csv(KULLANICI_FILE, dtype=str)
-    # YENİ KURAL: Rolü Yönetici olanları listeye alma!
     aktifler = df_k[(df_k["Durum"] == "Onaylandı") & (df_k["Rol"] != "Yonetici")]["Isim"].tolist()
     if not aktifler: return pd.DataFrame()
     
@@ -451,7 +462,6 @@ else:
 
         with tab_m:
             st.subheader("🛠️ Manuel Vardiya Atama")
-            # YENİ KURAL: Manuel vardiya atamada Yöneticileri listeleme
             aktif_personel_listesi = df_k[(df_k["Durum"] == "Onaylandı") & (df_k["Rol"] != "Yonetici")]["Isim"].tolist()
             
             if len(aktif_personel_listesi) > 0:
