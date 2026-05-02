@@ -322,6 +322,80 @@ def get_taslak_df():
     taslak.rename(columns={'index': 'Personel'}, inplace=True)
     return taslak
 
+
+
+def vardiya_sayaclarini_hesapla(df: pd.DataFrame):
+    """Canlı taslak tablosundan gün gün vardiya/izin sayılarını çıkarır."""
+    if df is None or df.empty:
+        return pd.DataFrame(), []
+
+    toplam_personel = len(df)
+    ozet_satirlari = []
+    uyarilar = []
+
+    for g in gunler:
+        sabahci = aksamci = tam_gun = tam_guc = izinli = belirsiz = 0
+
+        for deger in df[g].astype(str).tolist():
+            if "🔴" in deger:
+                izinli += 1
+            elif "🟢" in deger:
+                tam_guc += 1
+            elif "⏳" in deger:
+                belirsiz += 1
+            elif deger.startswith("S"):
+                sabahci += 1
+            elif deger.startswith("A"):
+                aksamci += 1
+            elif deger.startswith("T"):
+                tam_gun += 1
+
+        calisan = sabahci + aksamci + tam_gun + tam_guc
+        ozet_satirlari.append({
+            "Gün": g,
+            "Sabahçı": sabahci,
+            "Akşamcı": aksamci,
+            "Tam Gün": tam_gun,
+            "Tam Güç": tam_guc,
+            "İzinli": izinli,
+            "Belirsiz": belirsiz,
+            "Toplam Çalışan": calisan,
+        })
+
+        if belirsiz > 0:
+            uyarilar.append(f"{g}: {belirsiz} personelin planı belirsiz.")
+        if g != "Pazar":
+            if calisan == 0:
+                uyarilar.append(f"{g}: Hiç çalışan görünmüyor. Yayınlamadan önce kontrol edin.")
+            if sabahci == 0:
+                uyarilar.append(f"{g}: Sabahçı personel yok.")
+            if aksamci == 0:
+                uyarilar.append(f"{g}: Akşamcı personel yok.")
+        if toplam_personel > 0 and izinli >= max(2, round(toplam_personel * 0.5)):
+            uyarilar.append(f"{g}: İzinli kişi sayısı yüksek ({izinli}/{toplam_personel}).")
+
+    return pd.DataFrame(ozet_satirlari), uyarilar
+
+
+def operasyon_ozetini_goster(df: pd.DataFrame, baslik="📌 Günlük Personel Sayacı ve Uyarılar"):
+    """Yönetici için gün bazlı vardiya dağılımını ve risk uyarılarını gösterir."""
+    if df is None or df.empty:
+        st.info("Sayaç oluşturmak için onaylanmış plan bulunmuyor.")
+        return
+
+    st.subheader(baslik)
+    ozet_df, uyarilar = vardiya_sayaclarini_hesapla(df)
+
+    st.caption("Bu tablo sadece onaylanmış taleplerden oluşan canlı taslağa göre hesaplanır.")
+    st.dataframe(ozet_df, use_container_width=True, hide_index=True)
+
+    if uyarilar:
+        with st.expander(f"⚠️ Operasyon uyarıları ({len(uyarilar)})", expanded=True):
+            for u in uyarilar:
+                st.warning(u)
+    else:
+        st.success("Şu an belirgin bir vardiya çakışması veya eksikliği görünmüyor.")
+
 # ==========================================
 # SİSTEM HAFIZASI (ÇEREZ) YÖNETİMİ
 # ==========================================
@@ -735,6 +809,10 @@ if st.session_state.giris_yapildi:
                             st.info("💡 Yönetici hesaplarında çalışma veya vardiya tipi aranmaz.")
 
         with tab_t:
+            taslak_df_sayac = get_taslak_df()
+            operasyon_ozetini_goster(taslak_df_sayac)
+            st.divider()
+
             c1, c2 = st.columns([4, 1])
             with c1: st.subheader("1. Bekleyen Talepler")
             with c2: 
@@ -838,6 +916,10 @@ if st.session_state.giris_yapildi:
 
         with tab_y:
             st.subheader("Haftalık Operasyon Kontrolü")
+            taslak_df_yayin_kontrol = get_taslak_df()
+            operasyon_ozetini_goster(taslak_df_yayin_kontrol, baslik="📌 Yayın Öncesi Günlük Kontrol")
+            st.divider()
+
             if st.button("🔄 Yeni Haftaya Başla (Sıfırla)"):
                 supabase.table('ayarlar').update({'deger': 'GIZLI'}).eq('ayar_adi', 'yayin_durumu').execute()
                 supabase.table('talepler').delete().neq('id', 0).execute() 
