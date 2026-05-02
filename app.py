@@ -331,29 +331,35 @@ if st.session_state.giris_yapildi:
         
         with tab1:
             with st.form("personel_formu", clear_on_submit=True):
+                # --- YENİ EKLENEN KUSURSUZ SINIRLANDIRMA MANTIĞI ---
                 if st.session_state.calisma_tipi == "Part-Time":
                     st.info("ℹ️ Part-Time personel olarak sadece **ÇALIŞACAĞINIZ** günleri seçiniz.")
                     secilen_gunler = st.multiselect("✅ ÇALIŞACAĞINIZ Günleri Seçiniz:", gunler)
                 else:
-                    st.info("ℹ️ Tam Zamanlı personel olarak **İZİNLİ** (boş) olacağınız günleri seçiniz.")
-                    secilen_gunler = st.multiselect("🌴 İZİNLİ Olacağınız Günleri Seçiniz:", gunler)
+                    st.info("ℹ️ Tam Zamanlı personelin haftada **sadece 1 gün** izin hakkı vardır. Lütfen izin gününüzü seçiniz.")
+                    # Arayüzü değiştirip açılır kutuya çevirdik. İstese de 2 tane seçemez!
+                    secilen_gun = st.selectbox("🌴 İZİNLİ Olacağınız Günü Seçiniz:", gunler)
 
                 haftalik_shift = st.radio("Vardiyanız:", vardiya_secenekleri)
                 neden = st.text_area("Notunuz (İsteğe Bağlı):")
                 
                 if st.form_submit_button("Planımı Gönder"):
-                    if st.session_state.calisma_tipi == "Part-Time":
-                        izin_listesi = [g for g in gunler if g not in secilen_gunler]
+                    if st.session_state.calisma_tipi == "Part-Time" and len(secilen_gunler) == 0:
+                        st.error("❌ Hata: Lütfen çalışacağınız günleri seçiniz.")
                     else:
-                        izin_listesi = secilen_gunler
+                        if st.session_state.calisma_tipi == "Part-Time":
+                            izin_listesi = [g for g in gunler if g not in secilen_gunler]
+                        else:
+                            # Açılır kutudan gelen tek veriyi listeye çeviriyoruz
+                            izin_listesi = [secilen_gun]
+                            
+                        izin_str = ", ".join(izin_listesi) if len(izin_listesi) > 0 else "İzin Yok"
                         
-                    izin_str = ", ".join(izin_listesi) if len(izin_listesi) > 0 else "İzin Yok"
-                    
-                    yeni_talep = {"personel": st.session_state.kullanici_adi, "izin_gunu": izin_str, "haftalik_vardiya": haftalik_shift, "neden": neden, "durum": "Beklemede"}
-                    
-                    supabase.table('talepler').delete().eq('personel', st.session_state.kullanici_adi).execute()
-                    supabase.table('talepler').insert(yeni_talep).execute()
-                    st.success("Talebiniz veritabanına işlendi ve yönetime iletildi.")
+                        yeni_talep = {"personel": st.session_state.kullanici_adi, "izin_gunu": izin_str, "haftalik_vardiya": haftalik_shift, "neden": neden, "durum": "Beklemede"}
+                        
+                        supabase.table('talepler').delete().eq('personel', st.session_state.kullanici_adi).execute()
+                        supabase.table('talepler').insert(yeni_talep).execute()
+                        st.success("Talebiniz veritabanına işlendi ve yönetime iletildi.")
                     
         with tab2:
             st.info("💡 Yönetimin şu ana kadar onayladığı güncel durumu gösterir.")
@@ -428,10 +434,8 @@ if st.session_state.giris_yapildi:
                                 st.rerun()
                             if row["email"] != st.session_state.kullanici_mail: 
                                 if c2.button("🗑️ Kullanıcıyı Sil", key=f"kdel_{row['email']}"):
-                                    # YENİ EKLENEN SÜPÜRGE KODU (CASCADE DELETE)
                                     supabase.table('talepler').delete().eq('personel', row['isim']).execute()
                                     supabase.table('vardiyalar').delete().eq('personel', row['isim']).execute()
-                                    # EN SON KULLANICIYI SİLİYORUZ
                                     supabase.table('kullanicilar').delete().eq('email', row['email']).execute()
                                     st.rerun()
                         else:
@@ -480,6 +484,7 @@ if st.session_state.giris_yapildi:
                                 col_iz, col_var = st.columns(2)
                                 with col_iz:
                                     mevcut_izin = [g for g in gunler if g in str(row['izin_gunu'])]
+                                    # Yöneticinin her ihtimale karşı birden fazla güne müdahale etme yetkisi (multiselect) açık bırakıldı.
                                     guncel_izin = st.multiselect("İzin Değiştir:", gunler, default=mevcut_izin)
                                 with col_var:
                                     def_var_idx = 1 if "Akşamcı" in str(row['haftalik_vardiya']) else 2 if "Tam" in str(row['haftalik_vardiya']) else 0
