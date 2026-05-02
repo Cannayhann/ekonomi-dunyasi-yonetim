@@ -18,7 +18,7 @@ PROFILE_DIR = "profil_fotograflari"
 gunler = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 os.makedirs(PROFILE_DIR, exist_ok=True)
 
-# --- VERİTABANI KENDİNİ TAMİR ETME VE ZORUNLU ADMİN (BALYOZ YÖNTEMİ) ---
+# --- VERİTABANI KENDİNİ TAMİR ETME (GÜNCELLENDİ) ---
 kullanici_sutunlari = ["Isim", "Email", "Sifre", "Telefon", "Durum", "Rol"]
 
 if not os.path.exists(KULLANICI_FILE):
@@ -28,7 +28,6 @@ else:
     df_k = pd.read_csv(KULLANICI_FILE)
     guncellendi_mi = False
     
-    # Eksik sütunları tamamla
     if "Telefon" not in df_k.columns:
         df_k["Telefon"] = ""
         guncellendi_mi = True
@@ -36,13 +35,16 @@ else:
         df_k["Rol"] = "Personel"
         guncellendi_mi = True
         
-    # ADMİN KONTROLÜ (ZORLA GÜNCELLEME)
-    if "admin@edavm.com" in df_k["Email"].values:
-        # Eğer içeride varsa bile, şifresini ve yetkisini zorla sıfırla/onayla
-        df_k.loc[df_k["Email"] == "admin@edavm.com", ["Sifre", "Durum", "Rol"]] = ["ayhanlar2026", "Onaylandı", "Yonetici"]
-        guncellendi_mi = True
+    # ADMİN KONTROLÜ (Şifreyi ezmeden sadece yetkiyi koruma)
+    admin_mask = df_k["Email"] == "admin@edavm.com"
+    if admin_mask.any():
+        if df_k.loc[admin_mask, "Rol"].iloc[0] != "Yonetici":
+            df_k.loc[admin_mask, "Rol"] = "Yonetici"
+            guncellendi_mi = True
+        if df_k.loc[admin_mask, "Durum"].iloc[0] != "Onaylandı":
+            df_k.loc[admin_mask, "Durum"] = "Onaylandı"
+            guncellendi_mi = True
     else:
-        # Eğer hiç yoksa baştan ekle
         admin_data = {"Isim": "Yönetim", "Email": "admin@edavm.com", "Sifre": "ayhanlar2026", "Telefon": "05000000000", "Durum": "Onaylandı", "Rol": "Yonetici"}
         df_k = pd.concat([df_k, pd.DataFrame([admin_data])], ignore_index=True)
         guncellendi_mi = True
@@ -187,7 +189,7 @@ else:
 
     with open(YAYIN_FILE, "r") as f: yayin_durumu = f.read().strip()
 
-    # --- 1. SAYFA: PROFİLİM ---
+    # --- 1. SAYFA: PROFİLİM (HATANIN ÇÖZÜLDÜĞÜ YER) ---
     if sayfa == "Profilim":
         st.header("👤 Profilimi Düzenle")
         df_k = pd.read_csv(KULLANICI_FILE)
@@ -212,10 +214,15 @@ else:
             yeni_sifre = st.text_input("Şifre (Değiştirmek istemiyorsanız aynı bırakın):", value=u_data["Sifre"], type="password")
             
             if st.button("Bilgilerimi Kaydet"):
-                df_k.loc[df_k["Email"] == st.session_state.kullanici_mail, ["Isim", "Telefon", "Sifre"]] = [yeni_isim, yeni_tel, yeni_sifre]
+                mask = df_k["Email"] == st.session_state.kullanici_mail
+                # Veriler artık tek tek güncelleniyor, TypeError vermeyecek.
+                df_k.loc[mask, "Isim"] = yeni_isim
+                df_k.loc[mask, "Telefon"] = yeni_tel
+                df_k.loc[mask, "Sifre"] = yeni_sifre
                 df_k.to_csv(KULLANICI_FILE, index=False)
+                
                 st.session_state.kullanici_adi = yeni_isim
-                st.success("Profil bilgileriniz güncellendi.")
+                st.success("Profil bilgileriniz başarıyla güncellendi!")
                 st.rerun()
 
     # --- 2. SAYFA: VARDİYA İŞLEMLERİ ---
@@ -246,7 +253,7 @@ else:
                         return f'background-color: {c}; color: white'
                     st.table(df_v.style.map(style_status, subset=gunler))
             else:
-                st.warning("⚠️ Bu haftanın listesi henüz yayınlanmamıştır.")
+                st.warning("⚠️ Bu haftanın listesi henüz yönetim tarafından yayınlanmamıştır.")
 
     # --- 3. SAYFA: YÖNETİCİ PANELİ ---
     elif sayfa == "Yönetici Paneli" and st.session_state.kullanici_tipi == "Yonetici":
