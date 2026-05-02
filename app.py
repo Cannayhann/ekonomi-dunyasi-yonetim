@@ -4,7 +4,6 @@ import os
 import smtplib
 import random
 import string
-import base64
 from email.mime.text import MIMEText
 from datetime import datetime
 from supabase import create_client, Client
@@ -108,7 +107,7 @@ if "giris_yapildi" not in st.session_state:
     st.session_state.update({
         "giris_yapildi": False, "kullanici_tipi": "", "kullanici_adi": "", 
         "kullanici_mail": "", "reset_kod": "", "reset_mail": "", 
-        "calisma_tipi": "", "giris_adim_2": False
+        "calisma_tipi": ""
     })
 
 # --- OTOMATİK GİRİŞ (CİHAZDAN TANIMA) ---
@@ -126,115 +125,113 @@ if not st.session_state.giris_yapildi:
                     "kullanici_mail": user["email"],
                     "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
                 })
-                st.rerun() # Kişiyi tanıdıysa ana ekrana atla
             else:
-                cookies.remove('edavm_user_mail') # Hesap yasaklandıysa cihazdan sil
+                cookies.remove('edavm_user_mail')
         except: pass
 
 # ==========================================
-# GİRİŞ / KAYIT / ŞİFRE SIFIRLAMA / İŞ BAŞVURUSU
+# GİRİŞ / KAYIT EKRANI (GÖRÜNMEZ KAPSAYICI)
 # ==========================================
 if not st.session_state.giris_yapildi:
-    col_logo, col_baslik = st.columns([1, 8])
-    with col_baslik: st.title("🏢 Ekonomi Dünyası AVM Portalı")
-    st.markdown("---")
+    login_placeholder = st.empty()
     
-    col1, col2, col3 = st.columns([1, 4, 1])
-    with col2:
-        sekme = st.radio("İşlem Seçiniz", ["🔑 Giriş Yap", "📝 Kayıt Ol", "❓ Şifremi Unuttum", "👔 İş Başvurusu"], horizontal=True)
+    with login_placeholder.container():
+        col_logo, col_baslik = st.columns([1, 8])
+        with col_baslik: st.title("🏢 Ekonomi Dünyası AVM Portalı")
+        st.markdown("---")
+        
+        col1, col2, col3 = st.columns([1, 4, 1])
+        with col2:
+            sekme = st.radio("İşlem Seçiniz", ["🔑 Giriş Yap", "📝 Kayıt Ol", "❓ Şifremi Unuttum", "👔 İş Başvurusu"], horizontal=True)
 
-        if sekme == "🔑 Giriş Yap":
-            
-            # --- 1. ADIM: ŞİFREYİ DOĞRULA VE CİHAZA YAZ ---
-            if not st.session_state.get("giris_adim_2"):
+            if sekme == "🔑 Giriş Yap":
                 email_in = st.text_input("E-posta").strip().lower()
                 sifre_in = st.text_input("Şifre", type="password")
+                beni_hatirla = st.checkbox("Beni Hatırla (Cihazda Oturumu Açık Tut)", value=True)
                 
                 if st.button("Sisteme Gir"):
                     res = supabase.table('kullanicilar').select('*').eq('email', email_in).eq('sifre', sifre_in).execute()
                     if res.data:
                         user = res.data[0]
                         if user["durum"] == "Onaylandı":
-                            # Şifreyi cihaza kazıyoruz (30 Günlük Ömür)
-                            cookies.set('edavm_user_mail', user["email"], max_age=30*24*60*60)
-                            st.session_state.user_temp = user
-                            st.session_state.giris_adim_2 = True
+                            
+                            # SADECE SEÇİLİYSE TELEFONA KAYDET
+                            if beni_hatirla:
+                                cookies.set('edavm_user_mail', user["email"], max_age=30*24*60*60)
+                            else:
+                                if cookies.get('edavm_user_mail'):
+                                    cookies.remove('edavm_user_mail')
+                                    
+                            st.session_state.update({
+                                "giris_yapildi": True, 
+                                "kullanici_tipi": user["rol"], 
+                                "kullanici_adi": user["isim"], 
+                                "kullanici_mail": user["email"],
+                                "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
+                            })
+                            # Eski giriş ekranını tek hamlede silip kodun aşağıya inmesini (Panele geçmesini) sağlıyoruz!
+                            login_placeholder.empty() 
                         else: st.warning("⏳ Hesabınız onay bekliyor.")
                     else: st.error("❌ E-posta veya şifre hatalı.")
 
-            # --- 2. ADIM: CİHAZ KAYDINI TAMAMLA VE İÇERİ GİR ---
-            if st.session_state.get("giris_adim_2"):
-                st.success("✅ Güvenlik onayı alındı! Oturumunuz bu cihaza kaydedildi.")
-                if st.button("👉 AVM Paneline Geç 🚀", type="primary"):
-                    user = st.session_state.user_temp
-                    st.session_state.update({
-                        "giris_yapildi": True, 
-                        "kullanici_tipi": user["rol"], 
-                        "kullanici_adi": user["isim"], 
-                        "kullanici_mail": user["email"],
-                        "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
-                    })
-                    st.session_state.giris_adim_2 = False # Eski haline döndür
-                    st.rerun()
+            elif sekme == "📝 Kayıt Ol":
+                with st.form("kayit"):
+                    isim = st.text_input("Adınız Soyadınız")
+                    tel = st.text_input("Telefon Numaranız")
+                    mail = st.text_input("E-posta Adresiniz").strip().lower()
+                    calisma_tipi = st.selectbox("Çalışma Şekliniz", ["Tam Zamanlı", "Part-Time"])
+                    sifre = st.text_input("Şifre Belirleyiniz", type="password")
+                    
+                    if st.form_submit_button("Kayıt Talebi Gönder"):
+                        res_kontrol = supabase.table('kullanicilar').select('email').eq('email', mail).execute()
+                        if res_kontrol.data: st.error("Bu e-posta zaten sistemde kayıtlı.")
+                        elif isim == "" or mail == "" or sifre == "": st.warning("Lütfen zorunlu alanları doldurun.")
+                        else:
+                            yeni_veri = {"isim": str(isim.strip().title()), "email": str(mail), "sifre": str(sifre), "telefon": str(tel), "durum": "Beklemede", "rol": "Personel", "calisma_tipi": calisma_tipi}
+                            supabase.table('kullanicilar').insert(yeni_veri).execute()
+                            st.success("Kayıt başarılı! Yönetim onayından sonra girebilirsiniz.")
 
-        elif sekme == "📝 Kayıt Ol":
-            with st.form("kayit"):
-                isim = st.text_input("Adınız Soyadınız")
-                tel = st.text_input("Telefon Numaranız")
-                mail = st.text_input("E-posta Adresiniz").strip().lower()
-                calisma_tipi = st.selectbox("Çalışma Şekliniz", ["Tam Zamanlı", "Part-Time"])
-                sifre = st.text_input("Şifre Belirleyiniz", type="password")
-                
-                if st.form_submit_button("Kayıt Talebi Gönder"):
-                    res_kontrol = supabase.table('kullanicilar').select('email').eq('email', mail).execute()
-                    if res_kontrol.data: st.error("Bu e-posta zaten sistemde kayıtlı.")
-                    elif isim == "" or mail == "" or sifre == "": st.warning("Lütfen zorunlu alanları doldurun.")
-                    else:
-                        yeni_veri = {"isim": str(isim.strip().title()), "email": str(mail), "sifre": str(sifre), "telefon": str(tel), "durum": "Beklemede", "rol": "Personel", "calisma_tipi": calisma_tipi}
-                        supabase.table('kullanicilar').insert(yeni_veri).execute()
-                        st.success("Kayıt başarılı! Yönetim onayından sonra girebilirsiniz.")
+            elif sekme == "❓ Şifremi Unuttum":
+                if st.session_state.reset_kod == "":
+                    mail_res = st.text_input("Sisteme Kayıtlı E-posta Adresiniz:")
+                    if st.button("Doğrulama Kodu Gönder"):
+                        res = supabase.table('kullanicilar').select('email').eq('email', mail_res.strip().lower()).execute()
+                        if res.data:
+                            kod = kod_uret()
+                            st.session_state.reset_kod = kod
+                            st.session_state.reset_mail = mail_res.strip().lower()
+                            mail_gonder(mail_res, "ED-AVM | Şifre Sıfırlama", f"Sıfırlama kodunuz: {kod}")
+                            st.info("Kod e-postanıza gönderildi.")
+                        else: st.error("Mail sistemde bulunamadı.")
+                else:
+                    kod_in = st.text_input("Mailinize gelen kodu girin:")
+                    yeni_sifre = st.text_input("Yeni Şifreniz:", type="password")
+                    if st.button("Şifreyi Güncelle"):
+                        if kod_in == st.session_state.reset_kod:
+                            supabase.table('kullanicilar').update({"sifre": str(yeni_sifre)}).eq('email', st.session_state.reset_mail).execute()
+                            st.success("Şifreniz güncellendi!"); st.session_state.reset_kod = ""
+                        else: st.error("Kod hatalı.")
 
-        elif sekme == "❓ Şifremi Unuttum":
-            if st.session_state.reset_kod == "":
-                mail_res = st.text_input("Sisteme Kayıtlı E-posta Adresiniz:")
-                if st.button("Doğrulama Kodu Gönder"):
-                    res = supabase.table('kullanicilar').select('email').eq('email', mail_res.strip().lower()).execute()
-                    if res.data:
-                        kod = kod_uret()
-                        st.session_state.reset_kod = kod
-                        st.session_state.reset_mail = mail_res.strip().lower()
-                        mail_gonder(mail_res, "ED-AVM | Şifre Sıfırlama", f"Sıfırlama kodunuz: {kod}")
-                        st.info("Kod e-postanıza gönderildi.")
-                    else: st.error("Mail sistemde bulunamadı.")
-            else:
-                kod_in = st.text_input("Mailinize gelen kodu girin:")
-                yeni_sifre = st.text_input("Yeni Şifreniz:", type="password")
-                if st.button("Şifreyi Güncelle"):
-                    if kod_in == st.session_state.reset_kod:
-                        supabase.table('kullanicilar').update({"sifre": str(yeni_sifre)}).eq('email', st.session_state.reset_mail).execute()
-                        st.success("Şifreniz güncellendi!"); st.session_state.reset_kod = ""
-                    else: st.error("Kod hatalı.")
-
-        elif sekme == "👔 İş Başvurusu":
-            with st.form("is_basvurusu"):
-                b_isim = st.text_input("Adınız Soyadınız")
-                b_tel = st.text_input("Telefon Numaranız")
-                b_mail = st.text_input("E-posta Adresiniz")
-                b_pozisyon = st.selectbox("Başvurulan Pozisyon", ["Satış Danışmanı", "Kasa Görevlisi", "Depo / Lojistik", "E-Ticaret Sorumlusu"])
-                b_calisma_tipi = st.selectbox("Tercih Ettiğiniz Çalışma Şekli", ["Tam Zamanlı", "Part-Time"])
-                b_tecrube = st.text_area("İş Tecrübeleriniz")
-                
-                if st.form_submit_button("Başvurumu İlet"):
-                    if b_isim == "" or b_tel == "": st.warning("İsim ve telefon zorunludur.")
-                    else:
-                        yeni_basvuru = {"ad_soyad": str(b_isim.strip().title()), "telefon": str(b_tel), "eposta": str(b_mail), "pozisyon": str(b_pozisyon), "calisma_tipi": str(b_calisma_tipi), "tecrube": str(b_tecrube), "durum": "İnceleniyor", "tarih": datetime.now().strftime("%Y-%m-%d %H:%M")}
-                        supabase.table('basvurular').insert(yeni_basvuru).execute()
-                        st.success("Başvurunuz İK sistemine başarıyla kaydedildi!")
+            elif sekme == "👔 İş Başvurusu":
+                with st.form("is_basvurusu"):
+                    b_isim = st.text_input("Adınız Soyadınız")
+                    b_tel = st.text_input("Telefon Numaranız")
+                    b_mail = st.text_input("E-posta Adresiniz")
+                    b_pozisyon = st.selectbox("Başvurulan Pozisyon", ["Satış Danışmanı", "Kasa Görevlisi", "Depo / Lojistik", "E-Ticaret Sorumlusu"])
+                    b_calisma_tipi = st.selectbox("Tercih Ettiğiniz Çalışma Şekli", ["Tam Zamanlı", "Part-Time"])
+                    b_tecrube = st.text_area("İş Tecrübeleriniz")
+                    
+                    if st.form_submit_button("Başvurumu İlet"):
+                        if b_isim == "" or b_tel == "": st.warning("İsim ve telefon zorunludur.")
+                        else:
+                            yeni_basvuru = {"ad_soyad": str(b_isim.strip().title()), "telefon": str(b_tel), "eposta": str(b_mail), "pozisyon": str(b_pozisyon), "calisma_tipi": str(b_calisma_tipi), "tecrube": str(b_tecrube), "durum": "İnceleniyor", "tarih": datetime.now().strftime("%Y-%m-%d %H:%M")}
+                            supabase.table('basvurular').insert(yeni_basvuru).execute()
+                            st.success("Başvurunuz İK sistemine başarıyla kaydedildi!")
 
 # ==========================================
-# ANA SİSTEM (GİRİŞ YAPILDIKTAN SONRA)
+# ANA SİSTEM PANELİ (GİRİŞ YAPILDIKTAN SONRA)
 # ==========================================
-else:
+if st.session_state.giris_yapildi:
     pp_path = os.path.join(PROFILE_DIR, f"{st.session_state.kullanici_mail}.png")
     
     with st.sidebar:
@@ -253,9 +250,8 @@ else:
         sayfa = st.radio("Menü", menu_secenekleri)
         st.divider()
         
-        # --- ÇIKIŞ YAP (HAFIZADAN SİL) ---
         if st.button("🚪 Çıkış Yap", use_container_width=True):
-            cookies.remove('edavm_user_mail') # Cihazın hafızasından tamamen unut
+            cookies.remove('edavm_user_mail') # Çıkışta da cihazdan hafızayı siliyoruz
             st.session_state.giris_yapildi = False
             st.rerun()
 
