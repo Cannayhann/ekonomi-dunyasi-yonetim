@@ -16,13 +16,20 @@ from streamlit_cookies_controller import CookieController
 # 1. SİSTEM AYARLARI VE KLASÖRLER
 st.set_page_config(page_title="ED-AVM Yönetim", layout="wide")
 
-PROFILE_DIR = "profil_fotograflari"
-THEME_DIR = "tema_dosyalari"
+PROFILE_DIR = "profil_fotograflari"  # Eski sürüm/local fallback
+THEME_DIR = "tema_dosyalari"        # Eski sürüm/local fallback
 os.makedirs(PROFILE_DIR, exist_ok=True)
 os.makedirs(THEME_DIR, exist_ok=True)
 
 LOGO_PATH = os.path.join(THEME_DIR, "logo.png")
 BG_PATH = os.path.join(THEME_DIR, "arkaplan.png")
+
+# Supabase Storage ayarları
+# Supabase panelinde Storage > New bucket ile public bir bucket oluşturun:
+# Bucket name: edavm-assets
+STORAGE_BUCKET = "edavm-assets"
+LOGO_STORAGE_PATH = "theme/logo.png"
+BG_STORAGE_PATH = "theme/arkaplan.png"
 
 gunler = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 vardiya_secenekleri = ["Sabahçı (09:00 - 18:00)", "Akşamcı (12:00 - 21:00)", "Tam Gün (09:00 - 21:00)"]
@@ -113,8 +120,98 @@ def safe_db_execute(query, fallback=None, show_error=False, error_message="Verit
 
 
 
+# --- 2. BULUT VERİTABANI BAĞLANTISI ---
+# --- 2. BULUT VERİTABANI BAĞLANTISI ---
+@st.cache_resource
+def init_connection():
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
+
+try:
+    supabase = init_connection()
+except Exception as e:
+    st.error("⚠️ Veritabanı bağlantı hatası! Lütfen Streamlit Secrets ayarlarınızı kontrol edin.")
+    st.stop()
+
+# --- SUPABASE STORAGE YARDIMCILARI ---
+def storage_public_url(path: str):
+    try:
+        return supabase.storage.from_(STORAGE_BUCKET).get_public_url(path)
+    except Exception:
+        return None
+
+def storage_file_exists(path: str) -> bool:
+    try:
+        folder, filename = os.path.split(path)
+        items = supabase.storage.from_(STORAGE_BUCKET).list(folder)
+        return any(item.get("name") == filename for item in items)
+    except Exception:
+        return False
+
+def storage_image_url(path: str):
+    if storage_file_exists(path):
+        url = storage_public_url(path)
+        if url:
+            return f"{url}?v={int(time.time())}"
+    return None
+
+def upload_storage_file(uploaded_file, path: str):
+    try:
+        file_bytes = uploaded_file.getvalue()
+        content_type = getattr(uploaded_file, "type", None) or "image/png"
+
+        # Bazı Supabase sürümlerinde upsert desteklenmeyebilir; önce eski dosyayı silip sonra yüklüyoruz.
+        try:
+            supabase.storage.from_(STORAGE_BUCKET).remove([path])
+        except Exception:
+            pass
+
+        supabase.storage.from_(STORAGE_BUCKET).upload(
+            path,
+            file_bytes,
+            file_options={"content-type": content_type}
+        )
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+def remove_storage_file(path: str):
+    try:
+        supabase.storage.from_(STORAGE_BUCKET).remove([path])
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+def profile_storage_path(email: str) -> str:
+    safe_email = str(email).lower().replace("@", "_at_").replace(".", "_")
+    return f"profiles/{safe_email}.png"
+
 # --- TEMA UYGULAMA MOTORU ---
 def tema_uygula():
+    bg_url = storage_image_url(BG_STORAGE_PATH)
+
+    if bg_url:
+        st.markdown(
+        f"""
+        <style>
+        .stApp {{
+            background-image: url('{bg_url}');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }}
+        .block-container {{
+            background-color: rgba(255, 255, 255, 0.92);
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }}
+        </style>
+        """, unsafe_allow_html=True)
+        return
+
+    # Eski local dosya varsa geçici fallback olarak kullanılır.
     if os.path.exists(BG_PATH):
         try:
             with open(BG_PATH, "rb") as image_file:
@@ -136,22 +233,10 @@ def tema_uygula():
             }}
             </style>
             """, unsafe_allow_html=True)
-        except: pass
+        except Exception:
+            pass
 
 tema_uygula()
-
-# --- 2. BULUT VERİTABANI BAĞLANTISI ---
-@st.cache_resource
-def init_connection():
-    url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"]["key"]
-    return create_client(url, key)
-
-try:
-    supabase = init_connection()
-except Exception as e:
-    st.error("⚠️ Veritabanı bağlantı hatası! Lütfen Streamlit Secrets ayarlarınızı kontrol edin.")
-    st.stop()
 
 # --- VERİ ÇEKME FONKSİYONLARI ---
 def get_yayin_durumu():
@@ -564,7 +649,11 @@ if not st.session_state.get("giris_yapildi") and aktif_mail and not st.session_s
 if not st.session_state.giris_yapildi:
     col_logo, col_baslik = st.columns([1, 8])
     with col_logo:
-        if os.path.exists(LOGO_PATH): st.image(LOGO_PATH, width=80)
+        logo_url = storage_image_url(LOGO_STORAGE_PATH)
+        if logo_url:
+            st.image(logo_url, width=80)
+        elif os.path.exists(LOGO_PATH):
+            st.image(LOGO_PATH, width=80)
     with col_baslik: st.title("🏢 Ekonomi Dünyası AVM Portalı")
     st.markdown("---")
     
@@ -671,14 +760,24 @@ if not st.session_state.giris_yapildi:
 # ==========================================
 if st.session_state.giris_yapildi:
     pp_path = os.path.join(PROFILE_DIR, f"{st.session_state.kullanici_mail}.png")
+    pp_storage_path = profile_storage_path(st.session_state.kullanici_mail)
     
     with st.sidebar:
-        if os.path.exists(LOGO_PATH):
+        logo_url = storage_image_url(LOGO_STORAGE_PATH)
+        if logo_url:
+            st.image(logo_url, use_container_width=True)
+            st.divider()
+        elif os.path.exists(LOGO_PATH):
             st.image(LOGO_PATH, use_container_width=True)
             st.divider()
             
-        if os.path.exists(pp_path): st.image(pp_path, width=150)
-        else: st.write("👤 *(Fotoğraf Yok)*")
+        pp_url = storage_image_url(pp_storage_path)
+        if pp_url:
+            st.image(pp_url, width=150)
+        elif os.path.exists(pp_path):
+            st.image(pp_path, width=150)
+        else:
+            st.write("👤 *(Fotoğraf Yok)*")
             
         st.title(f"{st.session_state.kullanici_adi}")
         st.caption(f"{'👑 Yönetici' if st.session_state.kullanici_tipi == 'Yonetici' else 'Çalışan'}")
@@ -705,11 +804,23 @@ if st.session_state.giris_yapildi:
         col_foto, col_bilgi = st.columns([1, 2])
         with col_foto:
             st.subheader("Fotoğraf")
-            if os.path.exists(pp_path): st.image(pp_path, width=200)
+            pp_url = storage_image_url(pp_storage_path)
+            if pp_url:
+                st.image(pp_url, width=200)
+            elif os.path.exists(pp_path):
+                st.image(pp_path, width=200)
+
             yuklenen_foto = st.file_uploader("Yeni Fotoğraf Yükle (PNG/JPG)", type=["png", "jpg", "jpeg"])
             if yuklenen_foto is not None:
-                with open(pp_path, "wb") as f: f.write(yuklenen_foto.getbuffer())
-                st.success("Yüklendi! Yeni resminiz bir sonraki işlemde görünür olacaktır.")
+                ok, err = upload_storage_file(yuklenen_foto, pp_storage_path)
+                if ok:
+                    st.success("Fotoğraf Supabase Storage'a yüklendi. Sayfayı yenilediğinizde aktif görünür.")
+                    st.rerun()
+                else:
+                    # Storage ayarı yapılmadıysa uygulama tamamen bozulmasın diye local fallback.
+                    with open(pp_path, "wb") as f:
+                        f.write(yuklenen_foto.getbuffer())
+                    st.warning(f"Storage yüklemesi başarısız oldu, geçici olarak local kaydedildi. Detay: {err}")
 
         with col_bilgi:
             yeni_isim = st.text_input("Ad Soyad:", value=str(u_data["isim"]))
@@ -1110,29 +1221,73 @@ if st.session_state.giris_yapildi:
         st.write("Sitenizin arayüzünü bir WordPress paneli gibi kolayca özelleştirin.")
         st.divider()
         
+        st.info("Görseller artık Supabase Storage üzerinde tutulur. Bucket adı: `edavm-assets`. Bucket public olmalıdır.")
+
         c1, c2 = st.columns(2)
         with c1:
             st.write("**1. Firma Logosu**")
             st.caption("Sol menüde ve giriş ekranında en üstte görünür.")
-            if os.path.exists(LOGO_PATH): 
+            logo_url = storage_image_url(LOGO_STORAGE_PATH)
+            if logo_url:
+                st.image(logo_url, width=150)
+            elif os.path.exists(LOGO_PATH):
                 st.image(LOGO_PATH, width=150)
+                st.caption("Geçici local logo gösteriliyor. Kalıcı olması için Storage'a yeniden yükleyin.")
+            else:
+                st.caption("Henüz logo yüklenmedi.")
+
             yeni_logo = st.file_uploader("Yeni Logo Yükle (PNG/JPG)", type=['png','jpg','jpeg'], key="logo_up")
             if yeni_logo is not None:
-                with open(LOGO_PATH, "wb") as f: f.write(yeni_logo.getbuffer())
-                st.success("Logo başarıyla kaydedildi! Sayfayı yenilediğinizde (F5) aktif olacak.")
+                ok, err = upload_storage_file(yeni_logo, LOGO_STORAGE_PATH)
+                if ok:
+                    st.success("Logo Supabase Storage'a kaydedildi.")
+                    st.rerun()
+                else:
+                    st.error(f"Logo yüklenemedi. Supabase Storage bucket ayarlarını kontrol edin. Detay: {err}")
                 
-            if st.button("🗑️ Logoyu Kaldır") and os.path.exists(LOGO_PATH):
-                os.remove(LOGO_PATH); st.rerun()
+            if st.button("🗑️ Logoyu Kaldır"):
+                ok, err = remove_storage_file(LOGO_STORAGE_PATH)
+                if os.path.exists(LOGO_PATH):
+                    try:
+                        os.remove(LOGO_PATH)
+                    except Exception:
+                        pass
+                if ok:
+                    st.success("Logo kaldırıldı.")
+                    st.rerun()
+                else:
+                    st.warning(f"Storage logosu kaldırılamadı veya zaten yok. Detay: {err}")
                 
         with c2:
             st.write("**2. Arka Plan Görseli**")
-            st.caption("Sitenin tüm arka planını kaplar (Açık renkli fotolar önerilir).")
-            if os.path.exists(BG_PATH): 
+            st.caption("Sitenin tüm arka planını kaplar. Açık renkli görseller önerilir.")
+            bg_url = storage_image_url(BG_STORAGE_PATH)
+            if bg_url:
+                st.image(bg_url, width=250)
+            elif os.path.exists(BG_PATH):
                 st.image(BG_PATH, width=250)
+                st.caption("Geçici local arka plan gösteriliyor. Kalıcı olması için Storage'a yeniden yükleyin.")
+            else:
+                st.caption("Henüz arka plan yüklenmedi.")
+
             yeni_bg = st.file_uploader("Yeni Arka Plan Yükle (PNG/JPG)", type=['png','jpg','jpeg'], key="bg_up")
             if yeni_bg is not None:
-                with open(BG_PATH, "wb") as f: f.write(yeni_bg.getbuffer())
-                st.success("Arka plan başarıyla kaydedildi! Sayfayı yenilediğinizde (F5) aktif olacak.")
+                ok, err = upload_storage_file(yeni_bg, BG_STORAGE_PATH)
+                if ok:
+                    st.success("Arka plan Supabase Storage'a kaydedildi.")
+                    st.rerun()
+                else:
+                    st.error(f"Arka plan yüklenemedi. Supabase Storage bucket ayarlarını kontrol edin. Detay: {err}")
                 
-            if st.button("🗑️ Arka Planı Kaldır") and os.path.exists(BG_PATH):
-                os.remove(BG_PATH); st.rerun()
+            if st.button("🗑️ Arka Planı Kaldır"):
+                ok, err = remove_storage_file(BG_STORAGE_PATH)
+                if os.path.exists(BG_PATH):
+                    try:
+                        os.remove(BG_PATH)
+                    except Exception:
+                        pass
+                if ok:
+                    st.success("Arka plan kaldırıldı.")
+                    st.rerun()
+                else:
+                    st.warning(f"Storage arka planı kaldırılamadı veya zaten yok. Detay: {err}")
