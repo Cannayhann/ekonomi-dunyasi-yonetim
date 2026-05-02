@@ -111,11 +111,15 @@ if "giris_yapildi" not in st.session_state:
         "calisma_tipi": "", "cikis_yapiliyor": False
     })
 
-# --- YENİ: KUSURSUZ ÇIKIŞ YAPMA SİSTEMİ ---
+# --- YENİ: KUSURSUZ (AKILLI) ÇIKIŞ YAPMA SİSTEMİ ---
 if st.session_state.get("cikis_yapiliyor"):
-    cookies.remove('edavm_user_mail')
+    # Hata veren kısım düzeltildi: Sadece hafızada varsa sil
+    if cookies.get('edavm_user_mail'):
+        cookies.remove('edavm_user_mail')
+        
     if "session" in st.query_params:
         st.query_params.clear()
+        
     st.session_state.cikis_yapiliyor = False
     st.rerun()
 
@@ -142,7 +146,6 @@ if not st.session_state.giris_yapildi and aktif_mail:
                 "kullanici_mail": user["email"],
                 "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
             })
-            # Sadece bileti varsa ve henüz çerezi yazılmadıysa arka planda yaz (Garantileme)
             if bilet_mail and not kayitli_mail:
                 cookies.set('edavm_user_mail', user["email"], max_age=30*24*60*60)
         else:
@@ -173,10 +176,8 @@ if not st.session_state.giris_yapildi:
                     user = res.data[0]
                     if user["durum"] == "Onaylandı":
                         if beni_hatirla:
-                            # 1. Hızlı Geçiş için URL Bileti
                             token = base64.b64encode(user["email"].encode('utf-8')).decode('utf-8')
                             st.query_params["session"] = token
-                            # 2. Kalıcı hafıza için Çerez
                             cookies.set('edavm_user_mail', user["email"], max_age=30*24*60*60)
                         else:
                             if cookies.get('edavm_user_mail'): cookies.remove('edavm_user_mail')
