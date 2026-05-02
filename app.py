@@ -112,9 +112,7 @@ if "giris_yapildi" not in st.session_state:
         "yeni_cerez_yaz": None, "az_once_cikis_yapti": False
     })
 
-# 1. ÇIKIŞ YAP KONTROLÜ (En üstte çalışır ve cihazın hafızasını kesin olarak siler)
 if st.session_state.get("cikis_yapiliyor"):
-    # HATA ÇÖZÜMÜ BURADA: Eğer çerez zaten yoksa (kutucuk seçilmemişse) hata verme, sessizce geç.
     try:
         cookies.remove('edavm_user_mail')
     except Exception:
@@ -124,15 +122,13 @@ if st.session_state.get("cikis_yapiliyor"):
     st.session_state.update({
         "giris_yapildi": False,
         "cikis_yapiliyor": False,
-        "az_once_cikis_yapti": True # Hayalet çerezi engelleme kalkanı!
+        "az_once_cikis_yapti": True
     })
 
-# 2. YENİ GİRİŞ KONTROLÜ (Beni Hatırla seçildiyse cihazın beynine kazır)
 if st.session_state.get("yeni_cerez_yaz"):
     cookies.set('edavm_user_mail', st.session_state.get("yeni_cerez_yaz"), max_age=30*24*60*60)
     st.session_state.yeni_cerez_yaz = None
 
-# 3. CİHAZDAN OTOMATİK TANIMA (Sadece az önce çıkış YAPILMADIYSA çalışır)
 if not st.session_state.get("giris_yapildi") and not st.session_state.get("az_once_cikis_yapti"):
     kayitli_mail = cookies.get('edavm_user_mail')
     if kayitli_mail:
@@ -152,7 +148,6 @@ if not st.session_state.get("giris_yapildi") and not st.session_state.get("az_on
                     cookies.remove('edavm_user_mail')
                 except: pass
         except: pass
-
 
 # ==========================================
 # GİRİŞ / KAYIT EKRANI
@@ -176,7 +171,6 @@ if not st.session_state.giris_yapildi:
                 if res.data:
                     user = res.data[0]
                     if user["durum"] == "Onaylandı":
-                        # Cihaza yazma emrini yukarıya gönderiyoruz
                         if beni_hatirla:
                             st.session_state.yeni_cerez_yaz = user["email"]
                             
@@ -187,7 +181,7 @@ if not st.session_state.giris_yapildi:
                             "kullanici_mail": user["email"],
                             "calisma_tipi": user.get("calisma_tipi", "Tam Zamanlı")
                         })
-                        st.rerun() # Şimşek hızında paneli açar
+                        st.rerun() 
                     else: st.warning("⏳ Hesabınız onay bekliyor.")
                 else: st.error("❌ E-posta veya şifre hatalı.")
 
@@ -292,8 +286,14 @@ if st.session_state.giris_yapildi:
         with col_bilgi:
             yeni_isim = st.text_input("Ad Soyad:", value=str(u_data["isim"]))
             yeni_tel = st.text_input("Telefon:", value=str(u_data["telefon"]))
-            idx_tip = 0 if u_data.get("calisma_tipi", "Tam Zamanlı") == "Tam Zamanlı" else 1
-            yeni_tip = st.selectbox("Çalışma Tipi:", ["Tam Zamanlı", "Part-Time"], index=idx_tip)
+            
+            # YÖNETİCİ DEĞİLSE ÇALIŞMA TİPİNİ GÖSTER, YÖNETİCİYSE GİZLE
+            if st.session_state.kullanici_tipi != "Yonetici":
+                idx_tip = 0 if u_data.get("calisma_tipi", "Tam Zamanlı") == "Tam Zamanlı" else 1
+                yeni_tip = st.selectbox("Çalışma Tipi:", ["Tam Zamanlı", "Part-Time"], index=idx_tip)
+            else:
+                yeni_tip = u_data.get("calisma_tipi", "Tam Zamanlı") # Arka planda sabit kalır
+                
             yeni_sifre = st.text_input("Şifre:", value=str(u_data["sifre"]), type="password")
             
             if st.button("Kaydet"):
@@ -388,19 +388,32 @@ if st.session_state.giris_yapildi:
                 aktifler = df_k[df_k["durum"] == "Onaylandı"]
                 for _, row in aktifler.iterrows():
                     mevcut_tip = row.get("calisma_tipi", "Tam Zamanlı")
-                    with st.expander(f"⚙️ {row['isim']} ({row['rol']} - {mevcut_tip})"):
-                        st.write(f"Mail: {row['email']} | Tel: {row['telefon']} | Şifre: {row['sifre']}")
-                        idx_tip = 0 if mevcut_tip == "Tam Zamanlı" else 1
-                        yeni_tip = st.selectbox("Çalışma Tipi:", ["Tam Zamanlı", "Part-Time"], index=idx_tip, key=f"tip_{row['email']}")
+                    
+                    # YÖNETİCİ Mİ PERSONEL Mİ KONTROLÜ
+                    if row['rol'] == 'Yonetici':
+                        expander_title = f"👑 {row['isim']} (Yönetici)"
+                    else:
+                        expander_title = f"⚙️ {row['isim']} ({row['rol']} - {mevcut_tip})"
                         
-                        c1, c2 = st.columns(2)
-                        if c1.button("💾 Tipi Güncelle", key=f"kguncel_{row['email']}"):
-                            supabase.table('kullanicilar').update({'calisma_tipi': yeni_tip}).eq('email', row['email']).execute()
-                            st.rerun()
-                        if row["email"] != st.session_state.kullanici_mail: 
-                            if c2.button("🗑️ Kullanıcıyı Sil", key=f"kdel_{row['email']}"):
-                                supabase.table('kullanicilar').delete().eq('email', row['email']).execute()
+                    with st.expander(expander_title):
+                        st.write(f"Mail: {row['email']} | Tel: {row['telefon']} | Şifre: {row['sifre']}")
+                        
+                        # EĞER YÖNETİCİ DEĞİLSE ÇALIŞMA TİPİNİ GÜNCELLEMEYE İZİN VER
+                        if row['rol'] != 'Yonetici':
+                            idx_tip = 0 if mevcut_tip == "Tam Zamanlı" else 1
+                            yeni_tip = st.selectbox("Çalışma Tipi:", ["Tam Zamanlı", "Part-Time"], index=idx_tip, key=f"tip_{row['email']}")
+                            
+                            c1, c2 = st.columns(2)
+                            if c1.button("💾 Tipi Güncelle", key=f"kguncel_{row['email']}"):
+                                supabase.table('kullanicilar').update({'calisma_tipi': yeni_tip}).eq('email', row['email']).execute()
                                 st.rerun()
+                            if row["email"] != st.session_state.kullanici_mail: 
+                                if c2.button("🗑️ Kullanıcıyı Sil", key=f"kdel_{row['email']}"):
+                                    supabase.table('kullanicilar').delete().eq('email', row['email']).execute()
+                                    st.rerun()
+                        # YÖNETİCİYSE BİLGİ VER VE O SEÇENEKLERİ GÖSTERME
+                        else:
+                            st.info("💡 Yönetici hesaplarında çalışma veya vardiya tipi aranmaz.")
 
         with tab_t:
             res_t = supabase.table('talepler').select('*').execute()
