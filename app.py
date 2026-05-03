@@ -90,6 +90,7 @@ def get_auth_secret():
     except Exception:
         return "CHANGE_ME__ED_AVM_AUTH_SECRET"
 
+
 def hash_password(password: str) -> str:
     salt = os.urandom(16).hex()
     pwd_hash = hashlib.pbkdf2_hmac(
@@ -99,6 +100,7 @@ def hash_password(password: str) -> str:
         HASH_ITERATIONS
     ).hex()
     return f"pbkdf2_sha256${HASH_ITERATIONS}${salt}${pwd_hash}"
+
 
 def verify_password(password: str, stored_password: str) -> bool:
     stored_password = str(stored_password or "")
@@ -119,6 +121,7 @@ def verify_password(password: str, stored_password: str) -> bool:
 
     return hmac.compare_digest(password, stored_password)
 
+
 def make_session_token(email: str) -> str:
     exp = int(time.time()) + SESSION_MAX_AGE
     payload = f"{email}|{exp}"
@@ -128,6 +131,7 @@ def make_session_token(email: str) -> str:
         hashlib.sha256
     ).hexdigest()
     return base64.urlsafe_b64encode(f"{payload}|{sig}".encode("utf-8")).decode("utf-8")
+
 
 def parse_session_token(token: str):
     try:
@@ -160,6 +164,7 @@ def storage_public_url(path: str):
     except Exception:
         return None
 
+
 def storage_file_exists(path: str) -> bool:
     try:
         folder, filename = os.path.split(path)
@@ -168,12 +173,14 @@ def storage_file_exists(path: str) -> bool:
     except Exception:
         return False
 
+
 def storage_image_url(path: str):
     if storage_file_exists(path):
         url = storage_public_url(path)
         if url:
             return f"{url}?v={int(time.time())}"
     return None
+
 
 def upload_storage_file(uploaded_file, path: str):
     try:
@@ -194,6 +201,7 @@ def upload_storage_file(uploaded_file, path: str):
     except Exception as exc:
         return False, str(exc)
 
+
 def remove_storage_file(path: str):
     try:
         supabase.storage.from_(STORAGE_BUCKET).remove([path])
@@ -201,9 +209,11 @@ def remove_storage_file(path: str):
     except Exception as exc:
         return False, str(exc)
 
+
 def profile_storage_path(email: str) -> str:
     safe_email = str(email).lower().replace("@", "_at_").replace(".", "_")
     return f"profiles/{safe_email}.png"
+
 
 def tema_uygula():
     bg_url = storage_image_url(BG_STORAGE_PATH)
@@ -257,6 +267,7 @@ def tema_uygula():
         except Exception:
             pass
 
+
 tema_uygula()
 
 
@@ -272,7 +283,9 @@ def get_yayin_durumu():
         pass
     return "GIZLI"
 
+
 yayin_durumu = get_yayin_durumu()
+
 
 def mail_gonder(alici_mail, konu, mesaj_metni):
     try:
@@ -292,8 +305,28 @@ def mail_gonder(alici_mail, konu, mesaj_metni):
     except Exception:
         return False
 
+
 def kod_uret():
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+
+def current_user_label():
+    if st.session_state.get("giris_yapildi"):
+        return f"{st.session_state.get('kullanici_adi', '')} ({st.session_state.get('kullanici_mail', '')})"
+    return "Sistem"
+
+
+def log_kaydet(islem: str, detay: str = ""):
+    try:
+        supabase.table("islem_loglari").insert({
+            "kullanici": current_user_label(),
+            "islem": str(islem),
+            "detay": str(detay),
+            "tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }).execute()
+    except Exception:
+        pass
+
 
 def style_status(v):
     val_str = str(v)
@@ -315,6 +348,7 @@ def style_status(v):
 
     return f"background-color: {c}; color: white" if c else ""
 
+
 def tabloyu_ciz(df):
     df_gorsel = df.copy()
 
@@ -324,6 +358,19 @@ def tabloyu_ciz(df):
         )
 
     st.table(df_gorsel.style.map(style_status, subset=gunler))
+
+
+def csv_download_button(df: pd.DataFrame, file_name: str, label: str):
+    if df is None or df.empty:
+        return
+
+    csv = df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        label=label,
+        data=csv,
+        file_name=file_name,
+        mime="text/csv"
+    )
 
 
 # =========================================================
@@ -340,6 +387,7 @@ def get_peak_minimums():
 
     return DEFAULT_PEAK_MINIMUMS.copy()
 
+
 def save_peak_minimums(values: dict):
     payload = json.dumps(values, ensure_ascii=False)
 
@@ -354,6 +402,7 @@ def save_peak_minimums(values: dict):
                 "deger": payload
             }).execute()
 
+        log_kaydet("Operasyon kuralları güncellendi", payload)
         return True, None
     except Exception as exc:
         return False, str(exc)
@@ -369,6 +418,7 @@ def izin_listesi_oku(izin_gunu: str):
         return []
 
     return [g for g in gunler if g in izin_gunu]
+
 
 def vardiya_plani_oku(izin_gunu: str, haftalik_vardiya: str):
     izinler = izin_listesi_oku(izin_gunu)
@@ -397,6 +447,7 @@ def vardiya_plani_oku(izin_gunu: str, haftalik_vardiya: str):
 
     return plan
 
+
 def vardiya_plani_db_formatina_cevir(plan: dict):
     izinler = [g for g in gunler if plan.get(g) == "İzinli"]
     calisma_secimleri = [
@@ -409,6 +460,7 @@ def vardiya_plani_db_formatina_cevir(plan: dict):
     vardiya_str = "Karma | " + ", ".join(calisma_secimleri) if calisma_secimleri else "Karma | Seçim Yok"
 
     return izin_str, vardiya_str
+
 
 def gun_bazli_vardiya_editoru(prefix: str, izin_gunu: str = "İzin Yok", haftalik_vardiya: str = "Sabahçı"):
     mevcut_plan = vardiya_plani_oku(izin_gunu, haftalik_vardiya)
@@ -431,6 +483,8 @@ def gun_bazli_vardiya_editoru(prefix: str, izin_gunu: str = "İzin Yok", haftali
         )
 
     return vardiya_plani_db_formatina_cevir(yeni_plan)
+
+
 # =========================================================
 # 8. TASLAK TABLO VE OPERASYON KONTROL
 # =========================================================
@@ -484,6 +538,7 @@ def get_taslak_df():
 
     return taslak
 
+
 def vardiya_aktif_mi_12_18(v):
     val = str(v)
 
@@ -491,6 +546,7 @@ def vardiya_aktif_mi_12_18(v):
         return False
 
     return ("S " in val) or ("A " in val) or ("T " in val) or ("🟢" in val)
+
 
 def personel_email_ayikla(personel_str: str):
     try:
@@ -501,6 +557,7 @@ def personel_email_ayikla(personel_str: str):
         pass
 
     return None
+
 
 def kullanici_rol_map_getir():
     try:
@@ -513,6 +570,7 @@ def kullanici_rol_map_getir():
         }
     except Exception:
         return {}
+
 
 def peak_coverage_hesapla(taslak_df: pd.DataFrame):
     if taslak_df is None or taslak_df.empty:
@@ -563,6 +621,7 @@ def peak_coverage_hesapla(taslak_df: pd.DataFrame):
 
     return coverage, uyarilar
 
+
 def operasyon_kontrol_paneli(taslak_df: pd.DataFrame, baslik="12:00–18:00 Yoğun Saat Operasyon Kontrolü"):
     st.subheader(baslik)
 
@@ -610,6 +669,7 @@ def operasyon_kontrol_paneli(taslak_df: pd.DataFrame, baslik="12:00–18:00 Yoğ
 
     return uyarilar, kontrol_df
 
+
 def gunluk_vardiya_sayaci(taslak_df: pd.DataFrame, baslik="Günlük Vardiya Sayacı"):
     st.subheader(baslik)
 
@@ -644,7 +704,7 @@ def gunluk_vardiya_sayaci(taslak_df: pd.DataFrame, baslik="Günlük Vardiya Saya
             "Gün": g,
             "Sabahçı": sabah,
             "Akşamcı": aksam,
-            "Tam Gün / Tam Güç": tam,
+            "Tam Gün": tam,
             "İzinli": izinli,
             "Belirsiz": belirsiz,
             "12–18 Aktif Toplam": sabah + aksam + tam
@@ -655,10 +715,12 @@ def gunluk_vardiya_sayaci(taslak_df: pd.DataFrame, baslik="Günlük Vardiya Saya
 
     return sayac_df
 
+
 def hafta_id_uret():
     today = datetime.now()
     iso = today.isocalendar()
     return f"{iso.year}-W{iso.week:02d}"
+
 
 def vardiya_arsiv_kaydet(taslak_df: pd.DataFrame):
     if taslak_df is None or taslak_df.empty:
@@ -686,11 +748,8 @@ def vardiya_arsiv_kaydet(taslak_df: pd.DataFrame):
     except Exception as exc:
         return False, f"Arşiv kaydı yapılamadı. Detay: {exc}"
 
+
 def otomatik_haftalik_vardiya_ata(tam_gun_kullan=True):
-    """
-    Onaylı taleplerin izin günlerini korur.
-    Karma vardiya yerine haftalık sabit vardiya atar.
-    """
     try:
         res_t = supabase.table("talepler").select("*").eq("durum", "Onaylandı").execute()
         talepler = res_t.data if res_t.data else []
@@ -708,8 +767,15 @@ def otomatik_haftalik_vardiya_ata(tam_gun_kullan=True):
 
         random.shuffle(talepler)
 
+        sayac = {
+            "Sabahçı (09:00 - 18:00)": 0,
+            "Akşamcı (12:00 - 21:00)": 0,
+            "Tam Gün (09:00 - 21:00)": 0
+        }
+
         for i, talep in enumerate(talepler):
             atanacak_vardiya = vardiya_havuzu[i % len(vardiya_havuzu)]
+            sayac[atanacak_vardiya] += 1
             mevcut_not = str(talep.get("neden", "") or "").strip()
             sistem_notu = "Sistem otomatik haftalık vardiya ataması yaptı."
 
@@ -720,7 +786,8 @@ def otomatik_haftalik_vardiya_ata(tam_gun_kullan=True):
                 "neden": yeni_not
             }).eq("id", talep["id"]).execute()
 
-        return True, f"{len(talepler)} personel için haftalık vardiya otomatik atandı."
+        log_kaydet("Otomatik vardiya ataması", json.dumps(sayac, ensure_ascii=False))
+        return True, f"{len(talepler)} personel için haftalık vardiya otomatik atandı. Dağılım: {sayac}"
 
     except Exception as exc:
         return False, f"Otomatik vardiya atama sırasında hata oluştu: {exc}"
@@ -864,6 +931,7 @@ if not st.session_state.giris_yapildi:
                                 "az_once_cikis_yapti": False
                             })
 
+                            log_kaydet("Giriş yapıldı", user["email"])
                             st.rerun()
                         else:
                             st.warning("⏳ Hesabınız onay bekliyor.")
@@ -905,6 +973,7 @@ if not st.session_state.giris_yapildi:
                             "ED-AVM | Kayıt Talebiniz Alındı",
                             f"Merhaba {isim.strip().title()},\n\nSisteme kayıt talebiniz alınmıştır. Yönetim onayından sonra giriş yapabilirsiniz.\n\nED-AVM Yönetim"
                         )
+                        log_kaydet("Yeni kayıt talebi", mail)
                         st.success("Kayıt başarılı! Yönetim onayından sonra girebilirsiniz.")
 
         elif sekme == "❓ Şifremi Unuttum":
@@ -932,6 +1001,7 @@ if not st.session_state.giris_yapildi:
                             "sifre": hash_password(yeni_sifre)
                         }).eq("email", st.session_state.reset_mail).execute()
 
+                        log_kaydet("Şifre güncellendi", st.session_state.reset_mail)
                         st.success("Şifreniz güncellendi!")
                         st.session_state.reset_kod = ""
                     else:
@@ -965,7 +1035,10 @@ if not st.session_state.giris_yapildi:
                         }
 
                         supabase.table("basvurular").insert(yeni_basvuru).execute()
+                        log_kaydet("İş başvurusu alındı", b_isim)
                         st.success("Başvurunuz İK sistemine başarıyla kaydedildi!")
+
+
 # =========================================================
 # 11. ANA PANEL
 # =========================================================
@@ -1003,14 +1076,12 @@ if st.session_state.giris_yapildi:
         st.divider()
 
         def tam_cikis_yap():
+            log_kaydet("Çıkış yapıldı", st.session_state.get("kullanici_mail", ""))
             st.session_state.cikis_yapiliyor = True
 
         st.button("🚪 Çıkış Yap", on_click=tam_cikis_yap, use_container_width=True)
 
 
-    # =====================================================
-    # PROFİL
-    # =====================================================
     if sayfa == "Profilim":
         st.header("👤 Profilimi Düzenle")
 
@@ -1033,6 +1104,7 @@ if st.session_state.giris_yapildi:
                 ok, err = upload_storage_file(yuklenen_foto, profile_storage_path(st.session_state.kullanici_mail))
 
                 if ok:
+                    log_kaydet("Profil fotoğrafı güncellendi", st.session_state.kullanici_mail)
                     st.success("Fotoğraf yüklendi. Sayfayı yenileyince görünecektir.")
                 else:
                     st.error(f"Fotoğraf yüklenemedi: {err}")
@@ -1065,13 +1137,11 @@ if st.session_state.giris_yapildi:
                 st.session_state.kullanici_adi = str(yeni_isim)
                 st.session_state.calisma_tipi = str(yeni_tip)
 
+                log_kaydet("Profil güncellendi", st.session_state.kullanici_mail)
                 st.success("Profiliniz başarıyla güncellendi!")
                 st.rerun()
 
 
-    # =====================================================
-    # PERSONEL VARDİYA
-    # =====================================================
     elif sayfa == "Vardiya İşlemleri":
         st.header("📅 Haftalık Vardiya Planlaması")
         tab1, tab2, tab3 = st.tabs(["✍️ Planımı Gönder", "👀 Onaylananlar (Canlı Taslak)", "📊 Kesinleşen Liste"])
@@ -1137,6 +1207,7 @@ if st.session_state.giris_yapildi:
                         supabase.table("talepler").delete().eq("personel", benzersiz_kimlik).execute()
                         supabase.table("talepler").insert(yeni_talep).execute()
 
+                        log_kaydet("Vardiya talebi gönderildi", benzersiz_kimlik)
                         st.success("Talebiniz veritabanına işlendi ve yönetime iletildi.")
 
         with tab2:
@@ -1159,15 +1230,13 @@ if st.session_state.giris_yapildi:
                     df_v = pd.DataFrame(res_v.data)
                     df_v.rename(columns={"personel": "Personel"}, inplace=True)
                     tabloyu_ciz(df_v)
+                    csv_download_button(df_v, "kesinlesen_vardiya.csv", "⬇️ CSV indir")
                 else:
                     st.warning("Liste veritabanında boş.")
             else:
                 st.warning("⚠️ Kesinleşmiş liste henüz yayınlanmamıştır.")
 
 
-    # =====================================================
-    # KESİNLEŞEN LİSTE
-    # =====================================================
     elif sayfa == "Kesinleşen Liste":
         st.header("📊 Kesinleşen Vardiya Listesi")
 
@@ -1178,24 +1247,23 @@ if st.session_state.giris_yapildi:
                 df_v = pd.DataFrame(res_v.data)
                 df_v.rename(columns={"personel": "Personel"}, inplace=True)
                 tabloyu_ciz(df_v)
+                csv_download_button(df_v, "kesinlesen_vardiya.csv", "⬇️ CSV indir")
             else:
                 st.warning("Liste boş.")
         else:
             st.warning("⚠️ Yayınlanmış liste yok.")
 
 
-    # =====================================================
-    # YÖNETİCİ PANELİ
-    # =====================================================
     elif sayfa == "Yönetici Paneli" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("👑 Yönetim Kontrol Merkezi")
 
-        tab_k, tab_t, tab_m, tab_y, tab_b = st.tabs([
+        tab_k, tab_t, tab_m, tab_y, tab_b, tab_l = st.tabs([
             "👥 Kullanıcılar",
             "📥 Gelen Talepler",
             "🛠️ Manuel / Otomatik Plan",
             "🚀 Yayınlama",
-            "👔 İK"
+            "👔 İK",
+            "🧾 Loglar"
         ])
 
         with tab_k:
@@ -1203,8 +1271,24 @@ if st.session_state.giris_yapildi:
             df_k = pd.DataFrame(res_users.data) if res_users.data else pd.DataFrame()
 
             if not df_k.empty:
-                bekleyenler = df_k[df_k["durum"] == "Beklemede"]
+                arama = st.text_input("Kullanıcı ara", placeholder="İsim veya e-posta yazın...")
+                rol_filtre = st.selectbox("Rol filtresi", ["Tümü", "Yonetici", "Personel"])
+                tip_filtre = st.selectbox("Çalışma tipi filtresi", ["Tümü", "Tam Zamanlı", "Part-Time"])
+
+                df_view = df_k.copy()
+                if arama.strip():
+                    q = arama.strip().lower()
+                    df_view = df_view[df_view.apply(lambda r: q in str(r.get("isim", "")).lower() or q in str(r.get("email", "")).lower(), axis=1)]
+                if rol_filtre != "Tümü":
+                    df_view = df_view[df_view["rol"] == rol_filtre]
+                if tip_filtre != "Tümü":
+                    df_view = df_view[df_view["calisma_tipi"] == tip_filtre]
+
+                bekleyenler = df_view[df_view["durum"] == "Beklemede"]
                 st.subheader("Yeni Kayıtlar")
+
+                if bekleyenler.empty:
+                    st.info("Bekleyen yeni kayıt yok.")
 
                 for _, row in bekleyenler.iterrows():
                     with st.expander(f"👤 {row['isim']} ({row['email']}) | {row.get('calisma_tipi', 'Tam Zamanlı')}"):
@@ -1222,16 +1306,21 @@ if st.session_state.giris_yapildi:
                                 "ED-AVM | Hesabınız Onaylandı",
                                 f"Merhaba {row['isim']},\n\nED-AVM portal hesabınız onaylanmıştır.\n\nİyi çalışmalar."
                             )
+                            log_kaydet("Kullanıcı onaylandı", row["email"])
                             st.rerun()
 
                         if c2.button("Reddet", key=f"kred_{row['email']}"):
                             supabase.table("kullanicilar").delete().eq("email", row["email"]).execute()
+                            log_kaydet("Kullanıcı reddedildi/silindi", row["email"])
                             st.rerun()
 
                 st.divider()
                 st.subheader("Aktif Kullanıcılar")
 
-                aktifler = df_k[df_k["durum"] == "Onaylandı"]
+                aktifler = df_view[df_view["durum"] == "Onaylandı"]
+
+                if aktifler.empty:
+                    st.info("Filtreye uygun aktif kullanıcı yok.")
 
                 for _, row in aktifler.iterrows():
                     mevcut_tip = row.get("calisma_tipi", "Tam Zamanlı")
@@ -1268,14 +1357,17 @@ if st.session_state.giris_yapildi:
                                     "calisma_tipi": yeni_tip,
                                     "operasyon_rolu": yeni_op_rol
                                 }).eq("email", row["email"]).execute()
+                                log_kaydet("Kullanıcı bilgisi güncellendi", row["email"])
                                 st.rerun()
 
                             if row["email"] != st.session_state.kullanici_mail:
-                                if c2.button("🗑️ Kullanıcıyı Sil", key=f"kdel_{row['email']}"):
+                                sil_onay = st.checkbox("Bu kullanıcıyı silmeyi onaylıyorum", key=f"sil_onay_{row['email']}")
+                                if c2.button("🗑️ Kullanıcıyı Sil", key=f"kdel_{row['email']}", disabled=not sil_onay):
                                     benzersiz_isim = f"{row['isim']} ({row['email']})"
                                     supabase.table("talepler").delete().eq("personel", benzersiz_isim).execute()
                                     supabase.table("vardiyalar").delete().eq("personel", benzersiz_isim).execute()
                                     supabase.table("kullanicilar").delete().eq("email", row["email"]).execute()
+                                    log_kaydet("Kullanıcı silindi", row["email"])
                                     st.rerun()
                         else:
                             st.info("Yönetici hesabı.")
@@ -1294,7 +1386,17 @@ if st.session_state.giris_yapildi:
             df_t = pd.DataFrame(res_t.data) if res_t.data else pd.DataFrame()
 
             if not df_t.empty:
-                bekleyen_talepler = df_t[df_t["durum"] == "Beklemede"]
+                talep_arama = st.text_input("Talep ara", placeholder="Personel adı yazın...")
+                durum_filtre = st.selectbox("Talep durumu", ["Tümü", "Beklemede", "Onaylandı"])
+
+                df_t_view = df_t.copy()
+                if talep_arama.strip():
+                    q = talep_arama.strip().lower()
+                    df_t_view = df_t_view[df_t_view["personel"].astype(str).str.lower().str.contains(q, na=False)]
+                if durum_filtre != "Tümü":
+                    df_t_view = df_t_view[df_t_view["durum"] == durum_filtre]
+
+                bekleyen_talepler = df_t_view[df_t_view["durum"] == "Beklemede"]
 
                 if len(bekleyen_talepler) > 0:
                     for _, row in bekleyen_talepler.iterrows():
@@ -1319,10 +1421,12 @@ if st.session_state.giris_yapildi:
                                         "haftalik_vardiya": final_vardiya,
                                         "durum": "Onaylandı"
                                     }).eq("id", row["id"]).execute()
+                                    log_kaydet("Talep onaylandı", row["personel"])
                                     st.rerun()
 
                                 if c2.form_submit_button("❌ Reddet"):
                                     supabase.table("talepler").delete().eq("id", row["id"]).execute()
+                                    log_kaydet("Talep reddedildi/silindi", row["personel"])
                                     st.rerun()
                 else:
                     st.info("Bekleyen talep yok.")
@@ -1333,7 +1437,7 @@ if st.session_state.giris_yapildi:
             st.subheader("2. Onaylanmış Talepleri Düzenle")
 
             if not df_t.empty:
-                onayli_talepler = df_t[df_t["durum"] == "Onaylandı"]
+                onayli_talepler = df_t_view[df_t_view["durum"] == "Onaylandı"] if 'df_t_view' in locals() else df_t[df_t["durum"] == "Onaylandı"]
 
                 if len(onayli_talepler) > 0:
                     for _, row in onayli_talepler.iterrows():
@@ -1357,14 +1461,17 @@ if st.session_state.giris_yapildi:
                                         "izin_gunu": yeni_izin_str,
                                         "haftalik_vardiya": final_vardiya
                                     }).eq("id", row["id"]).execute()
+                                    log_kaydet("Onaylı talep güncellendi", row["personel"])
                                     st.rerun()
 
                                 if c2.form_submit_button("⚠️ İptal Et"):
                                     supabase.table("talepler").update({"durum": "Beklemede"}).eq("id", row["id"]).execute()
+                                    log_kaydet("Onaylı talep beklemeye alındı", row["personel"])
                                     st.rerun()
 
                                 if c3.form_submit_button("🗑️ Sil"):
                                     supabase.table("talepler").delete().eq("id", row["id"]).execute()
+                                    log_kaydet("Onaylı talep silindi", row["personel"])
                                     st.rerun()
                 else:
                     st.info("Onaylanmış talep yok.")
@@ -1376,6 +1483,7 @@ if st.session_state.giris_yapildi:
 
             if not taslak_df.empty:
                 tabloyu_ciz(taslak_df)
+                csv_download_button(taslak_df, "canli_taslak_vardiya.csv", "⬇️ Taslağı CSV indir")
                 st.divider()
                 gunluk_vardiya_sayaci(taslak_df)
                 st.divider()
@@ -1389,6 +1497,7 @@ if st.session_state.giris_yapildi:
                 "Bu işlem onaylı taleplerdeki izin günlerini korur, "
                 "karma vardiya düzenini kaldırır ve personellere haftalık sabit vardiya atar."
             )
+            st.warning("Bu işlem mevcut onaylı taleplerin vardiya tiplerini değiştirebilir. İzin günleri korunur.")
 
             tam_gun_kullan = st.checkbox(
                 "Tam Gün vardiyası da otomatik dağıtıma dahil edilsin",
@@ -1397,11 +1506,16 @@ if st.session_state.giris_yapildi:
             )
 
             otomatik_onay = st.checkbox(
-                "Otomatik atama yapılacağını onaylıyorum.",
+                "Mevcut onaylı planın üzerine otomatik vardiya atanacağını onaylıyorum.",
                 key="otomatik_vardiya_onay"
             )
 
-            if st.button("🎲 Onaylı Personele Haftalık Vardiya Ata", disabled=not otomatik_onay):
+            ikinci_onay = st.checkbox(
+                "Bu işlemin geri dönüşü için elle düzenleme gerekebileceğini anladım.",
+                key="otomatik_vardiya_ikinci_onay"
+            )
+
+            if st.button("🎲 Onaylı Personele Haftalık Vardiya Ata", disabled=not (otomatik_onay and ikinci_onay)):
                 ok, msg = otomatik_haftalik_vardiya_ata(tam_gun_kullan=tam_gun_kullan)
 
                 if ok:
@@ -1446,6 +1560,7 @@ if st.session_state.giris_yapildi:
                         }
 
                         supabase.table("talepler").insert(yeni_manuel).execute()
+                        log_kaydet("Manuel vardiya atandı", secilen_kisi)
                         st.success("Veritabanına eklendi!")
                         st.rerun()
             else:
@@ -1459,6 +1574,7 @@ if st.session_state.giris_yapildi:
 
             if not taslak_df.empty:
                 tabloyu_ciz(taslak_df)
+                csv_download_button(taslak_df, "yayin_oncesi_taslak.csv", "⬇️ Yayın öncesi taslağı CSV indir")
                 st.divider()
                 gunluk_vardiya_sayaci(taslak_df, baslik="Yayın Öncesi Günlük Vardiya Sayacı")
                 st.divider()
@@ -1473,16 +1589,20 @@ if st.session_state.giris_yapildi:
             st.divider()
 
             st.markdown("### Yeni Haftaya Başlama")
+            st.warning("Bu işlem mevcut talepleri siler ve yayın durumunu gizliye alır.")
             reset_onay = st.checkbox("Yeni haftaya başlarken mevcut taleplerin silineceğini onaylıyorum.", key="reset_onay")
+            reset_ikinci_onay = st.checkbox("Bu işlemin geri alınamayacağını anladım.", key="reset_ikinci_onay")
 
-            if st.button("🔄 Yeni Haftaya Başla (Sıfırla)", disabled=not reset_onay):
+            if st.button("🔄 Yeni Haftaya Başla (Sıfırla)", disabled=not (reset_onay and reset_ikinci_onay)):
                 supabase.table("ayarlar").update({"deger": "GIZLI"}).eq("ayar_adi", "yayin_durumu").execute()
                 supabase.table("talepler").delete().neq("id", 0).execute()
+                log_kaydet("Yeni hafta sıfırlandı", "Talepler temizlendi, yayın durumu GIZLI yapıldı.")
                 st.success("Veritabanı sıfırlandı. Yeni haftaya başlandı.")
                 st.rerun()
 
             st.divider()
             st.markdown("### Listeyi Yayınla")
+            st.info("Yayınlama işlemi kesinleşen listeyi personel ekranında görünür yapar.")
 
             if uyarilar:
                 uyarilari_gordum = st.checkbox("Yoğun saat uyarılarını gördüm ve buna rağmen yayınlamayı onaylıyorum.", key="uyari_onay")
@@ -1490,7 +1610,8 @@ if st.session_state.giris_yapildi:
                 uyarilari_gordum = True
 
             listeyi_kontrol_ettim = st.checkbox("Kesinleşen listeyi kontrol ettim.", key="liste_kontrol_onay")
-            yayin_hazir = (not taslak_df.empty) and uyarilari_gordum and listeyi_kontrol_ettim
+            yayin_ikinci_onay = st.checkbox("Bu listeyi yayınlamayı kesin olarak onaylıyorum.", key="yayin_ikinci_onay")
+            yayin_hazir = (not taslak_df.empty) and uyarilari_gordum and listeyi_kontrol_ettim and yayin_ikinci_onay
 
             col_yayin, col_mail = st.columns(2)
 
@@ -1517,6 +1638,7 @@ if st.session_state.giris_yapildi:
                         supabase.table("ayarlar").update({"deger": "YAYINLANDI"}).eq("ayar_adi", "yayin_durumu").execute()
                         supabase.table("talepler").delete().neq("id", 0).execute()
 
+                        log_kaydet("Liste yayınlandı", "Haftalık vardiya listesi kesinleştirildi.")
                         st.success("Liste kaydedildi ve yayınlandı!")
                         st.rerun()
                     else:
@@ -1533,9 +1655,20 @@ if st.session_state.giris_yapildi:
 
             if res_b.data:
                 df_b = pd.DataFrame(res_b.data)
-                bekleyen_b = df_b[df_b["durum"] == "İnceleniyor"]
+                basvuru_arama = st.text_input("Başvuru ara", placeholder="Ad, telefon veya pozisyon yazın...")
+                basvuru_durum = st.selectbox("Başvuru durumu", ["Tümü", "İnceleniyor", "Kabul", "Red"])
 
-                for _, row in bekleyen_b.iterrows():
+                df_b_view = df_b.copy()
+                if basvuru_arama.strip():
+                    q = basvuru_arama.strip().lower()
+                    df_b_view = df_b_view[df_b_view.apply(lambda r: q in str(r.get("ad_soyad", "")).lower() or q in str(r.get("telefon", "")).lower() or q in str(r.get("pozisyon", "")).lower(), axis=1)]
+                if basvuru_durum != "Tümü":
+                    df_b_view = df_b_view[df_b_view["durum"] == basvuru_durum]
+
+                if df_b_view.empty:
+                    st.info("Filtreye uygun başvuru yok.")
+
+                for _, row in df_b_view.iterrows():
                     with st.expander(f"👤 {row['ad_soyad']} - {row['pozisyon']} ({row.get('calisma_tipi', 'Tam Zamanlı')})"):
                         st.write(f"Tel: {row['telefon']} | Mail: {row['eposta']}\n\nTecrübe: {row['tecrube']}")
 
@@ -1543,22 +1676,39 @@ if st.session_state.giris_yapildi:
 
                         if c1.button("Kabul", key=f"bk_{row['id']}"):
                             supabase.table("basvurular").update({"durum": "Kabul"}).eq("id", row["id"]).execute()
+                            log_kaydet("Başvuru kabul edildi", row["ad_soyad"])
                             st.rerun()
 
                         if c2.button("Red", key=f"br_{row['id']}"):
                             supabase.table("basvurular").update({"durum": "Red"}).eq("id", row["id"]).execute()
+                            log_kaydet("Başvuru reddedildi", row["ad_soyad"])
                             st.rerun()
 
-                        if c3.button("Sil", key=f"bs_{row['id']}"):
+                        sil_onay = st.checkbox("Başvuruyu silmeyi onaylıyorum", key=f"bs_onay_{row['id']}")
+                        if c3.button("Sil", key=f"bs_{row['id']}", disabled=not sil_onay):
                             supabase.table("basvurular").delete().eq("id", row["id"]).execute()
+                            log_kaydet("Başvuru silindi", row["ad_soyad"])
                             st.rerun()
             else:
                 st.info("İncelenmeyi bekleyen başvuru yok.")
 
+        with tab_l:
+            st.subheader("🧾 İşlem Logları")
+            st.caption("Sistemde yapılan önemli işlemler burada görüntülenir. Tablo yoksa bu bölüm boş kalabilir.")
 
-    # =====================================================
-    # SİSTEM TASARIMI
-    # =====================================================
+            try:
+                res_logs = supabase.table("islem_loglari").select("*").order("id", desc=True).limit(100).execute()
+                logs = res_logs.data if res_logs.data else []
+                if logs:
+                    df_logs = pd.DataFrame(logs)
+                    st.dataframe(df_logs, use_container_width=True)
+                    csv_download_button(df_logs, "islem_loglari.csv", "⬇️ Logları CSV indir")
+                else:
+                    st.info("Henüz log kaydı yok.")
+            except Exception as exc:
+                st.warning(f"Log tablosu okunamadı. Supabase'de islem_loglari tablosu yoksa bu normaldir. Detay: {exc}")
+
+
     elif sayfa == "Sistem Tasarımı" and st.session_state.kullanici_tipi == "Yonetici":
         st.header("🎨 Sistemi Özelleştir")
         st.write("Sitenizin arayüzünü ve operasyon kurallarını buradan yönetebilirsiniz.")
@@ -1582,6 +1732,7 @@ if st.session_state.giris_yapildi:
                 ok, err = upload_storage_file(yeni_logo, LOGO_STORAGE_PATH)
 
                 if ok:
+                    log_kaydet("Logo güncellendi", LOGO_STORAGE_PATH)
                     st.success("Logo Supabase Storage'a kaydedildi.")
                 else:
                     st.error(f"Logo yüklenemedi: {err}")
@@ -1590,6 +1741,7 @@ if st.session_state.giris_yapildi:
                 ok, err = remove_storage_file(LOGO_STORAGE_PATH)
 
                 if ok:
+                    log_kaydet("Logo kaldırıldı", LOGO_STORAGE_PATH)
                     st.success("Logo kaldırıldı.")
                     st.rerun()
                 else:
@@ -1610,6 +1762,7 @@ if st.session_state.giris_yapildi:
                 ok, err = upload_storage_file(yeni_bg, BG_STORAGE_PATH)
 
                 if ok:
+                    log_kaydet("Arka plan güncellendi", BG_STORAGE_PATH)
                     st.success("Arka plan Supabase Storage'a kaydedildi.")
                 else:
                     st.error(f"Arka plan yüklenemedi: {err}")
@@ -1618,6 +1771,7 @@ if st.session_state.giris_yapildi:
                 ok, err = remove_storage_file(BG_STORAGE_PATH)
 
                 if ok:
+                    log_kaydet("Arka plan kaldırıldı", BG_STORAGE_PATH)
                     st.success("Arka plan kaldırıldı.")
                     st.rerun()
                 else:
@@ -1633,54 +1787,26 @@ if st.session_state.giris_yapildi:
             c1, c2, c3 = st.columns(3)
 
             with c1:
-                alt_kat_min = st.number_input(
-                    "Alt Kat Minimum",
-                    min_value=0,
-                    max_value=50,
-                    value=int(mevcut_minimumlar.get("Alt Kat", 5))
-                )
-                giris_kat_min = st.number_input(
-                    "Giriş Kat Minimum",
-                    min_value=0,
-                    max_value=50,
-                    value=int(mevcut_minimumlar.get("Giriş Kat", 2))
-                )
+                alt_kat_min = st.number_input("Alt Kat Minimum", min_value=0, max_value=50, value=int(mevcut_minimumlar.get("Alt Kat", 5)), help="12:00–18:00 arasında alt katta bulunması gereken minimum aktif kişi sayısı.")
+                giris_kat_min = st.number_input("Giriş Kat Minimum", min_value=0, max_value=50, value=int(mevcut_minimumlar.get("Giriş Kat", 2)), help="12:00–18:00 arasında giriş katta bulunması gereken minimum aktif kişi sayısı.")
 
             with c2:
-                ust_kat_min = st.number_input(
-                    "Üst Kat Minimum",
-                    min_value=0,
-                    max_value=50,
-                    value=int(mevcut_minimumlar.get("Üst Kat", 1))
-                )
-                dis_alan_min = st.number_input(
-                    "Dış Alan Minimum",
-                    min_value=0,
-                    max_value=50,
-                    value=int(mevcut_minimumlar.get("Dış Alan", 1))
-                )
+                ust_kat_min = st.number_input("Üst Kat Minimum", min_value=0, max_value=50, value=int(mevcut_minimumlar.get("Üst Kat", 1)), help="12:00–18:00 arasında üst katta bulunması gereken minimum aktif kişi sayısı.")
+                dis_alan_min = st.number_input("Dış Alan Minimum", min_value=0, max_value=50, value=int(mevcut_minimumlar.get("Dış Alan", 1)), help="12:00–18:00 arasında dış alanda bulunması gereken minimum aktif kişi sayısı.")
 
             with c3:
-                dinamik_min = st.number_input(
-                    "Dinamik Destek Minimum",
-                    min_value=0,
-                    max_value=50,
-                    value=int(mevcut_minimumlar.get("Dinamik Destek", 1))
-                )
-                destek_min = st.number_input(
-                    "Destek Minimum",
-                    min_value=0,
-                    max_value=50,
-                    value=int(mevcut_minimumlar.get("Destek", 0))
-                )
-                toplam_min = st.number_input(
-                    "Toplam Aktif Minimum",
-                    min_value=0,
-                    max_value=100,
-                    value=int(mevcut_minimumlar.get("Toplam Aktif", 8))
-                )
+                dinamik_min = st.number_input("Dinamik Destek Minimum", min_value=0, max_value=50, value=int(mevcut_minimumlar.get("Dinamik Destek", 1)), help="Sabit bölgeye bağlı olmayan destek personeli minimumu.")
+                destek_min = st.number_input("Destek Minimum", min_value=0, max_value=50, value=int(mevcut_minimumlar.get("Destek", 0)), help="Cuma/Cumartesi gibi yoğun günlerde ek destek personeli minimumu.")
+                toplam_min = st.number_input("Toplam Aktif Minimum", min_value=0, max_value=100, value=int(mevcut_minimumlar.get("Toplam Aktif", 8)), help="12:00–18:00 arasında mağazada bulunması gereken minimum toplam aktif kişi sayısı.")
 
-            if st.form_submit_button("💾 Operasyon Kurallarını Kaydet"):
+            col_save, col_default = st.columns(2)
+
+            with col_save:
+                kaydet = st.form_submit_button("💾 Operasyon Kurallarını Kaydet")
+            with col_default:
+                varsayilana_don = st.form_submit_button("↩️ Varsayılana Döndür")
+
+            if kaydet:
                 yeni_minimumlar = {
                     "Alt Kat": alt_kat_min,
                     "Giriş Kat": giris_kat_min,
@@ -1698,3 +1824,46 @@ if st.session_state.giris_yapildi:
                     st.rerun()
                 else:
                     st.error(f"Kurallar kaydedilemedi: {err}")
+
+            if varsayilana_don:
+                ok, err = save_peak_minimums(DEFAULT_PEAK_MINIMUMS)
+                if ok:
+                    st.success("Varsayılan operasyon kuralları yüklendi.")
+                    st.rerun()
+                else:
+                    st.error(f"Varsayılan ayarlar yüklenemedi: {err}")
+```
+
+SQL tarafında log tablosu için Supabase SQL Editor’da bunu da çalıştır:
+
+```sql
+create table if not exists islem_loglari (
+  id bigint generated by default as identity primary key,
+  kullanici text,
+  islem text,
+  detay text,
+  tarih text
+);
+```
+
+Mevcut tablolar için bunlar da durmalı:
+
+```sql
+alter table kullanicilar
+add column if not exists operasyon_rolu text default 'Alt Kat';
+```
+
+```sql
+create table if not exists vardiya_arsiv (
+  id bigint generated by default as identity primary key,
+  hafta_id text,
+  personel text,
+  "Pazartesi" text,
+  "Salı" text,
+  "Çarşamba" text,
+  "Perşembe" text,
+  "Cuma" text,
+  "Cumartesi" text,
+  "Pazar" text,
+  created_at text
+);
