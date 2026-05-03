@@ -431,31 +431,6 @@ def gun_bazli_vardiya_editoru(prefix: str, izin_gunu: str = "İzin Yok", haftali
         )
 
     return vardiya_plani_db_formatina_cevir(yeni_plan)
-    mevcut_plan = vardiya_plani_oku(izin_gunu, haftalik_vardiya)
-    yeni_plan = {}
-
-    st.markdown("**Gün bazlı vardiya düzenleme:**")
-    st.caption("Her gün için İzinli / Sabahçı / Akşamcı / Tam Gün seçebilirsiniz.")
-
-    c1, c2 = st.columns(2)
-
-    for i, g in enumerate(gunler):
-        with (c1 if i % 2 == 0 else c2):
-            mevcut_deger = mevcut_plan.get(g, "Sabahçı")
-
-            if mevcut_deger not in ADMIN_GUN_DURUMLARI:
-                mevcut_deger = "Sabahçı"
-
-            yeni_plan[g] = st.selectbox(
-                f"{g}:",
-                ADMIN_GUN_DURUMLARI,
-                index=ADMIN_GUN_DURUMLARI.index(mevcut_deger),
-                key=f"{prefix}_{g}"
-            )
-
-    return vardiya_plani_db_formatina_cevir(yeni_plan)
-
-
 # =========================================================
 # 8. TASLAK TABLO VE OPERASYON KONTROL
 # =========================================================
@@ -713,6 +688,45 @@ def vardiya_arsiv_kaydet(taslak_df: pd.DataFrame):
     except Exception as exc:
         return False, f"Arşiv kaydı yapılamadı. Detay: {exc}"
 
+def otomatik_haftalik_vardiya_ata(tam_gun_kullan=True):
+    """
+    Onaylı taleplerin izin günlerini korur.
+    Karma vardiya yerine haftalık sabit vardiya atar.
+    """
+    try:
+        res_t = supabase.table("talepler").select("*").eq("durum", "Onaylandı").execute()
+        talepler = res_t.data if res_t.data else []
+
+        if not talepler:
+            return False, "Onaylı talep bulunamadı."
+
+        vardiya_havuzu = [
+            "Sabahçı (09:00 - 18:00)",
+            "Akşamcı (12:00 - 21:00)"
+        ]
+
+        if tam_gun_kullan:
+            vardiya_havuzu.append("Tam Gün (09:00 - 21:00)")
+
+        random.shuffle(talepler)
+
+        for i, talep in enumerate(talepler):
+            atanacak_vardiya = vardiya_havuzu[i % len(vardiya_havuzu)]
+            mevcut_not = str(talep.get("neden", "") or "").strip()
+            sistem_notu = "Sistem otomatik haftalık vardiya ataması yaptı."
+
+            yeni_not = sistem_notu if mevcut_not == "" else f"{mevcut_not} | {sistem_notu}"
+
+            supabase.table("talepler").update({
+                "haftalik_vardiya": atanacak_vardiya,
+                "neden": yeni_not
+            }).eq("id", talep["id"]).execute()
+
+        return True, f"{len(talepler)} personel için haftalık vardiya otomatik atandı."
+
+    except Exception as exc:
+        return False, f"Otomatik vardiya atama sırasında hata oluştu: {exc}"
+
 
 # =========================================================
 # 9. SESSION / COOKIE
@@ -954,8 +968,6 @@ if not st.session_state.giris_yapildi:
 
                         supabase.table("basvurular").insert(yeni_basvuru).execute()
                         st.success("Başvurunuz İK sistemine başarıyla kaydedildi!")
-
-
 # =========================================================
 # 11. ANA PANEL
 # =========================================================
@@ -1082,13 +1094,11 @@ if st.session_state.giris_yapildi:
 
                     if calisilan_gunler:
                         st.markdown("**Seçtiğiniz günler için vardiya tercihiniz:**")
-                        c1, c2 = st.columns(2)
 
-                        for i, g in enumerate(calisilan_gunler):
-                            with (c1 if i % 2 == 0 else c2):
-                                sec = st.selectbox(f"{g} vardiyası:", vardiya_secenekleri, key=f"pt_vardiya_{g}")
-                                shift_kisa = "Sabahçı" if "Sabahçı" in sec else ("Akşamcı" if "Akşamcı" in sec else "Tam Gün")
-                                karma_secimler.append(f"{g}: {shift_kisa}")
+                        for g in calisilan_gunler:
+                            sec = st.selectbox(f"{g} vardiyası:", vardiya_secenekleri, key=f"pt_vardiya_{g}")
+                            shift_kisa = "Sabahçı" if "Sabahçı" in sec else ("Akşamcı" if "Akşamcı" in sec else "Tam Gün")
+                            karma_secimler.append(f"{g}: {shift_kisa}")
 
                         haftalik_shift = "Karma | " + ", ".join(karma_secimler)
                     else:
@@ -1106,24 +1116,8 @@ if st.session_state.giris_yapildi:
                         calisilan_gunler = [g for g in gunler if g != secilen_gun]
                         izin_listesi = [secilen_gun]
 
-                    vardiya_tipi = st.radio(
-                        "Çalışma Düzeniniz:",
-                        ["Sabit Vardiya (Tüm Hafta Aynı)", "Karma Vardiya (Günlere Göre Değişken)"]
-                    )
-
-                    if vardiya_tipi == "Sabit Vardiya (Tüm Hafta Aynı)":
-                        haftalik_shift = st.radio("Vardiyanız:", vardiya_secenekleri)
-                    else:
-                        st.write("Aşağıdan her çalışma günü için vardiyanızı ayarlayabilirsiniz:")
-                        c1, c2 = st.columns(2)
-
-                        for i, g in enumerate(calisilan_gunler):
-                            with (c1 if i % 2 == 0 else c2):
-                                sec = st.selectbox(f"{g} vardiyası:", vardiya_secenekleri, key=f"karma_{g}")
-                                shift_kisa = "Sabahçı" if "Sabahçı" in sec else ("Akşamcı" if "Akşamcı" in sec else "Tam Gün")
-                                karma_secimler.append(f"{g}: {shift_kisa}")
-
-                        haftalik_shift = "Karma | " + ", ".join(karma_secimler) if karma_secimler else "Karma | Seçim Yok"
+                    st.caption("Not: Yönetim haftalık vardiya dağıtımını otomatik veya manuel olarak düzenleyebilir.")
+                    haftalik_shift = st.radio("Tercih ettiğiniz haftalık vardiya:", vardiya_secenekleri)
 
                 neden = st.text_area("Notunuz (İsteğe Bağlı):")
 
@@ -1201,7 +1195,7 @@ if st.session_state.giris_yapildi:
         tab_k, tab_t, tab_m, tab_y, tab_b = st.tabs([
             "👥 Kullanıcılar",
             "📥 Gelen Talepler",
-            "🛠️ Manuel Plan",
+            "🛠️ Manuel / Otomatik Plan",
             "🚀 Yayınlama",
             "👔 İK"
         ])
@@ -1392,6 +1386,34 @@ if st.session_state.giris_yapildi:
                 st.info("Önizlenecek onaylı plan yok.")
 
         with tab_m:
+            st.subheader("🎲 Otomatik Haftalık Vardiya Atama")
+            st.caption(
+                "Bu işlem onaylı taleplerdeki izin günlerini korur, "
+                "karma vardiya düzenini kaldırır ve personellere haftalık sabit vardiya atar."
+            )
+
+            tam_gun_kullan = st.checkbox(
+                "Tam Gün vardiyası da otomatik dağıtıma dahil edilsin",
+                value=True,
+                key="otomatik_tam_gun_kullan"
+            )
+
+            otomatik_onay = st.checkbox(
+                "Otomatik atama yapılacağını onaylıyorum.",
+                key="otomatik_vardiya_onay"
+            )
+
+            if st.button("🎲 Onaylı Personele Haftalık Vardiya Ata", disabled=not otomatik_onay):
+                ok, msg = otomatik_haftalik_vardiya_ata(tam_gun_kullan=tam_gun_kullan)
+
+                if ok:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+            st.divider()
+
             st.subheader("🛠️ Manuel Vardiya Atama")
 
             res_k = supabase.table("kullanicilar").select("isim, email").eq("durum", "Onaylandı").neq("rol", "Yonetici").execute()
@@ -1403,6 +1425,7 @@ if st.session_state.giris_yapildi:
                     st.markdown("**Manuel gün bazlı plan:**")
 
                     manuel_plan = {}
+
                     for g in gunler:
                         manuel_plan[g] = st.selectbox(
                             f"{g}:",
