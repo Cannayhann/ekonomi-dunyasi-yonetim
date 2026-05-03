@@ -459,8 +459,6 @@ def get_taslak_df():
         for g in gunler:
             if g in iz_str:
                 taslak.at[p, g] = "🔴 İZİNLİ"
-            elif g == "Pazar":
-                taslak.at[p, g] = "🟢 TAM GÜÇ"
             else:
                 if "Karma" in v_str:
                     if f"{g}: Sabahçı" in v_str:
