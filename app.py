@@ -1778,7 +1778,7 @@ if st.session_state.giris_yapildi:
 
         with tab_y:
             st.subheader("Haftalık Operasyon Kontrolü")
-            st.caption("Yayınlamadan önce 12:00–18:00 yoğun saat kapasitesi ve genel vardiya dengesi kontrol edilir.")
+            st.caption("Yayınlamadan önce yoğun saat kapasitesi ve genel vardiya dengesi kontrol edilir.")
 
             taslak_df = get_taslak_df()
 
@@ -2154,7 +2154,7 @@ if st.session_state.giris_yapildi:
 
         st.divider()
         st.subheader("⚙️ Yoğun Saat Operasyon Kuralları")
-        st.caption("12:00–18:00 arası minimum personel gereksinimlerini buradan değiştirebilirsiniz.")
+        st.caption("Yoğun saatteki minimum personel gereksinimlerini buradan değiştirebilirsiniz.")
 
         mevcut_minimumlar = get_peak_minimums()
 
