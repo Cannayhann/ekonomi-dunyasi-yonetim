@@ -40,6 +40,8 @@ DEFAULT_SHIFT_SETTINGS = {
     "Tam Gün": {"baslangic": "09:00", "bitis": "21:00"}
 }
 
+DEFAULT_SPECIAL_DAYS = []
+
 vardiya_secenekleri = [
     "Sabahçı (09:00 - 18:00)",
     "Akşamcı (12:00 - 21:00)",
@@ -356,21 +358,101 @@ def vardiya_secenekleri_getir():
     ]
 
 
-def vardiya_kisa_gosterim(vardiya_adi: str):
+def get_special_days():
+    try:
+        res = supabase.table("ayarlar").select("deger").eq("ayar_adi", "ozel_gunler").execute()
+        if res.data:
+            data = json.loads(res.data[0]["deger"])
+            if isinstance(data, list):
+                return data
+    except Exception:
+        pass
+    return DEFAULT_SPECIAL_DAYS.copy()
+
+
+def save_special_days(values: list):
+    payload = json.dumps(values, ensure_ascii=False)
+
+    try:
+        existing = supabase.table("ayarlar").select("ayar_adi").eq("ayar_adi", "ozel_gunler").execute()
+
+        if existing.data:
+            supabase.table("ayarlar").update({"deger": payload}).eq("ayar_adi", "ozel_gunler").execute()
+        else:
+            supabase.table("ayarlar").insert({
+                "ayar_adi": "ozel_gunler",
+                "deger": payload
+            }).execute()
+
+        log_kaydet("Özel gün ayarları güncellendi", payload)
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+def get_special_day_for_weekday(gun_adi: str):
+    special_days = get_special_days()
+    today = datetime.now().date()
+    current_year = today.year
+
+    for item in special_days:
+        if not item.get("aktif", True):
+            continue
+
+        try:
+            tarih = datetime.strptime(str(item.get("tarih", "")), "%Y-%m-%d").date()
+        except Exception:
+            continue
+
+        if tarih.year != current_year:
+            continue
+
+        weekday_map = {
+            0: "Pazartesi",
+            1: "Salı",
+            2: "Çarşamba",
+            3: "Perşembe",
+            4: "Cuma",
+            5: "Cumartesi",
+            6: "Pazar"
+        }
+
+        if weekday_map.get(tarih.weekday()) == gun_adi:
+            return item
+
+    return None
+
+
+def vardiya_kapanis_saati(vardiya_adi: str, gun_adi: str = None):
+    settings = get_shift_settings()
+    bitis = settings[vardiya_adi]["bitis"]
+
+    special_day = get_special_day_for_weekday(gun_adi) if gun_adi else None
+    if special_day and vardiya_adi in ["Akşamcı", "Tam Gün"]:
+        bitis = special_day.get("kapanis", bitis)
+
+    return bitis
+
+
+def vardiya_kisa_gosterim(vardiya_adi: str, gun_adi: str = None):
     settings = get_shift_settings()
 
     if vardiya_adi == "Sabahçı":
         s = settings["Sabahçı"]
-        return f"S ({saat_araligi_kisa(s['baslangic'], s['bitis'])})"
+        bitis = vardiya_kapanis_saati("Sabahçı", gun_adi)
+        return f"S ({saat_araligi_kisa(s['baslangic'], bitis)})"
     if vardiya_adi == "Akşamcı":
         s = settings["Akşamcı"]
-        return f"A ({saat_araligi_kisa(s['baslangic'], s['bitis'])})"
+        bitis = vardiya_kapanis_saati("Akşamcı", gun_adi)
+        return f"A ({saat_araligi_kisa(s['baslangic'], bitis)})"
     if vardiya_adi == "Tam Gün":
         s = settings["Tam Gün"]
-        return f"T ({saat_araligi_kisa(s['baslangic'], s['bitis'])})"
+        bitis = vardiya_kapanis_saati("Tam Gün", gun_adi)
+        return f"T ({saat_araligi_kisa(s['baslangic'], bitis)})"
 
     s = settings["Sabahçı"]
-    return f"S ({saat_araligi_kisa(s['baslangic'], s['bitis'])})"
+    bitis = vardiya_kapanis_saati("Sabahçı", gun_adi)
+    return f"S ({saat_araligi_kisa(s['baslangic'], bitis)})"
 
 
 vardiya_secenekleri = vardiya_secenekleri_getir()
@@ -605,20 +687,20 @@ def get_taslak_df():
             else:
                 if "Karma" in v_str:
                     if f"{g}: Sabahçı" in v_str:
-                        shift = vardiya_kisa_gosterim("Sabahçı")
+                        shift = vardiya_kisa_gosterim("Sabahçı", g)
                     elif f"{g}: Akşamcı" in v_str:
-                        shift = vardiya_kisa_gosterim("Akşamcı")
+                        shift = vardiya_kisa_gosterim("Akşamcı", g)
                     elif f"{g}: Tam Gün" in v_str:
-                        shift = vardiya_kisa_gosterim("Tam Gün")
+                        shift = vardiya_kisa_gosterim("Tam Gün", g)
                     else:
-                        shift = vardiya_kisa_gosterim("Sabahçı")
+                        shift = vardiya_kisa_gosterim("Sabahçı", g)
                 else:
                     if "Akşamcı" in v_str:
-                        shift = vardiya_kisa_gosterim("Akşamcı")
+                        shift = vardiya_kisa_gosterim("Akşamcı", g)
                     elif "Tam" in v_str:
-                        shift = vardiya_kisa_gosterim("Tam Gün")
+                        shift = vardiya_kisa_gosterim("Tam Gün", g)
                     else:
-                        shift = vardiya_kisa_gosterim("Sabahçı")
+                        shift = vardiya_kisa_gosterim("Sabahçı", g)
 
                 taslak.at[p, g] = shift
 
@@ -757,6 +839,39 @@ def operasyon_kontrol_paneli(taslak_df: pd.DataFrame, baslik="12:00–18:00 Yoğ
         st.success("✅ 12:00–18:00 yoğun saat operasyon kapasitesi karşılanıyor.")
 
     return uyarilar, kontrol_df
+
+
+def get_special_day_for_weekday(gun_adi: str):
+    special_days = get_special_days()
+    today = datetime.now().date()
+    current_year = today.year
+
+    weekday_map = {
+        0: "Pazartesi",
+        1: "Salı",
+        2: "Çarşamba",
+        3: "Perşembe",
+        4: "Cuma",
+        5: "Cumartesi",
+        6: "Pazar"
+    }
+
+    for item in special_days:
+        if not item.get("aktif", True):
+            continue
+
+        try:
+            tarih = datetime.strptime(str(item.get("tarih", "")), "%Y-%m-%d").date()
+        except Exception:
+            continue
+
+        if tarih.year != current_year:
+            continue
+
+        if weekday_map.get(tarih.weekday()) == gun_adi:
+            return item
+
+    return None
 
 
 def gunluk_vardiya_sayaci(taslak_df: pd.DataFrame, baslik="Günlük Vardiya Sayacı"):
@@ -1948,6 +2063,94 @@ if st.session_state.giris_yapildi:
                     st.rerun()
                 else:
                     st.error(f"Varsayılan saatler yüklenemedi: {err}")
+
+        st.divider()
+        st.subheader("📌 Özel Gün / Geç Kapanış Ayarları")
+        st.caption("Anneler Günü, Sevgililer Günü, arefe veya kırtasiye dönemi gibi günlerde kapanış saatini buradan uzatabilirsiniz.")
+
+        ozel_gunler = get_special_days()
+
+        with st.form("ozel_gun_ekle_form"):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                yeni_ozel_ad = st.text_input("Özel Gün Adı", placeholder="Örn: Anneler Günü")
+            with c2:
+                yeni_ozel_tarih = st.date_input("Tarih", value=datetime.now().date())
+            with c3:
+                yeni_ozel_kapanis = st.time_input("Kapanış Saati", value=saat_str_to_time("24:00") if False else saat_str_to_time("23:59"))
+
+            yeni_ozel_not = st.text_input("Not", placeholder="Örn: Yoğun kampanya günü / geç kapanış")
+            ekle = st.form_submit_button("➕ Özel Gün Ekle")
+
+            if ekle:
+                kapanis_str = time_to_saat_str(yeni_ozel_kapanis)
+                if kapanis_str == "23:59":
+                    kapanis_str = "24:00"
+
+                if yeni_ozel_ad.strip() == "":
+                    st.error("Özel gün adı boş olamaz.")
+                else:
+                    ozel_gunler.append({
+                        "ad": yeni_ozel_ad.strip(),
+                        "tarih": yeni_ozel_tarih.strftime("%Y-%m-%d"),
+                        "kapanis": kapanis_str,
+                        "not": yeni_ozel_not.strip(),
+                        "aktif": True
+                    })
+                    ok, err = save_special_days(ozel_gunler)
+                    if ok:
+                        st.success("Özel gün eklendi.")
+                        st.rerun()
+                    else:
+                        st.error(f"Özel gün kaydedilemedi: {err}")
+
+        if ozel_gunler:
+            st.markdown("**Kayıtlı özel günler:**")
+            guncel_ozel_gunler = []
+
+            for i, item in enumerate(ozel_gunler):
+                with st.expander(f"📌 {item.get('ad', 'Özel Gün')} | {item.get('tarih', '')} | Kapanış: {item.get('kapanis', '')} | {'Aktif' if item.get('aktif', True) else 'Pasif'}"):
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        ad = st.text_input("Ad", value=item.get("ad", ""), key=f"ozel_ad_{i}")
+                    with c2:
+                        try:
+                            tarih_default = datetime.strptime(item.get("tarih", datetime.now().strftime("%Y-%m-%d")), "%Y-%m-%d").date()
+                        except Exception:
+                            tarih_default = datetime.now().date()
+                        tarih = st.date_input("Tarih", value=tarih_default, key=f"ozel_tarih_{i}")
+                    with c3:
+                        kapanis_default = item.get("kapanis", "23:59")
+                        if kapanis_default == "24:00":
+                            kapanis_default = "23:59"
+                        kapanis = st.time_input("Kapanış", value=saat_str_to_time(kapanis_default), key=f"ozel_kapanis_{i}")
+
+                    not_metni = st.text_input("Not", value=item.get("not", ""), key=f"ozel_not_{i}")
+                    aktif = st.checkbox("Aktif", value=item.get("aktif", True), key=f"ozel_aktif_{i}")
+                    sil = st.checkbox("Bu özel günü sil", value=False, key=f"ozel_sil_{i}")
+
+                    kapanis_str = time_to_saat_str(kapanis)
+                    if item.get("kapanis") == "24:00" and kapanis_str == "23:59":
+                        kapanis_str = "24:00"
+
+                    if not sil:
+                        guncel_ozel_gunler.append({
+                            "ad": ad.strip(),
+                            "tarih": tarih.strftime("%Y-%m-%d"),
+                            "kapanis": kapanis_str,
+                            "not": not_metni.strip(),
+                            "aktif": aktif
+                        })
+
+            if st.button("💾 Özel Günleri Kaydet"):
+                ok, err = save_special_days(guncel_ozel_gunler)
+                if ok:
+                    st.success("Özel gün ayarları kaydedildi.")
+                    st.rerun()
+                else:
+                    st.error(f"Özel günler kaydedilemedi: {err}")
+        else:
+            st.info("Henüz özel gün tanımlanmadı.")
 
         st.divider()
         st.subheader("⚙️ Yoğun Saat Operasyon Kuralları")
