@@ -789,8 +789,14 @@ def gunluk_vardiya_sayaci(taslak_df: pd.DataFrame, baslik="Günlük Vardiya Saya
             elif "⏳" in val:
                 belirsiz += 1
 
+        special_day = get_special_day_for_weekday(g)
+        ozel_gun_notu = ""
+        if special_day:
+            ozel_gun_notu = f"🌙 {special_day.get('ad', 'Özel Gün')} / {special_day.get('kapanis', '')} kapanış"
+
         rows.append({
             "Gün": g,
+            "Özel Gün": ozel_gun_notu,
             "Sabahçı": sabah,
             "Akşamcı": aksam,
             "Tam Gün": tam,
