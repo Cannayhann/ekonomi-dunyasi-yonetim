@@ -34,6 +34,12 @@ BG_STORAGE_PATH = "theme/arkaplan.png"
 
 gunler = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 
+DEFAULT_SHIFT_SETTINGS = {
+    "Sabahçı": {"baslangic": "09:00", "bitis": "18:00"},
+    "Akşamcı": {"baslangic": "12:00", "bitis": "21:00"},
+    "Tam Gün": {"baslangic": "09:00", "bitis": "21:00"}
+}
+
 vardiya_secenekleri = [
     "Sabahçı (09:00 - 18:00)",
     "Akşamcı (12:00 - 21:00)",
@@ -287,6 +293,89 @@ def get_yayin_durumu():
 yayin_durumu = get_yayin_durumu()
 
 
+def saat_str_to_time(saat_str: str):
+    try:
+        return datetime.strptime(str(saat_str), "%H:%M").time()
+    except Exception:
+        return datetime.strptime("09:00", "%H:%M").time()
+
+
+def time_to_saat_str(t):
+    return t.strftime("%H:%M")
+
+
+def saat_araligi_kisa(baslangic: str, bitis: str):
+    def kisa(s):
+        s = str(s)
+        return s[:-3] if s.endswith(":00") else s
+    return f"{kisa(baslangic)}-{kisa(bitis)}"
+
+
+def get_shift_settings():
+    try:
+        res = supabase.table("ayarlar").select("deger").eq("ayar_adi", "vardiya_saatleri").execute()
+        if res.data:
+            data = json.loads(res.data[0]["deger"])
+            merged = DEFAULT_SHIFT_SETTINGS.copy()
+            for vardiya, saatler in data.items():
+                if vardiya in merged and isinstance(saatler, dict):
+                    merged[vardiya] = {**merged[vardiya], **saatler}
+            return merged
+    except Exception:
+        pass
+
+    return DEFAULT_SHIFT_SETTINGS.copy()
+
+
+def save_shift_settings(values: dict):
+    payload = json.dumps(values, ensure_ascii=False)
+
+    try:
+        existing = supabase.table("ayarlar").select("ayar_adi").eq("ayar_adi", "vardiya_saatleri").execute()
+
+        if existing.data:
+            supabase.table("ayarlar").update({"deger": payload}).eq("ayar_adi", "vardiya_saatleri").execute()
+        else:
+            supabase.table("ayarlar").insert({
+                "ayar_adi": "vardiya_saatleri",
+                "deger": payload
+            }).execute()
+
+        log_kaydet("Vardiya saatleri güncellendi", payload)
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+def vardiya_secenekleri_getir():
+    settings = get_shift_settings()
+    return [
+        f"Sabahçı ({settings['Sabahçı']['baslangic']} - {settings['Sabahçı']['bitis']})",
+        f"Akşamcı ({settings['Akşamcı']['baslangic']} - {settings['Akşamcı']['bitis']})",
+        f"Tam Gün ({settings['Tam Gün']['baslangic']} - {settings['Tam Gün']['bitis']})"
+    ]
+
+
+def vardiya_kisa_gosterim(vardiya_adi: str):
+    settings = get_shift_settings()
+
+    if vardiya_adi == "Sabahçı":
+        s = settings["Sabahçı"]
+        return f"S ({saat_araligi_kisa(s['baslangic'], s['bitis'])})"
+    if vardiya_adi == "Akşamcı":
+        s = settings["Akşamcı"]
+        return f"A ({saat_araligi_kisa(s['baslangic'], s['bitis'])})"
+    if vardiya_adi == "Tam Gün":
+        s = settings["Tam Gün"]
+        return f"T ({saat_araligi_kisa(s['baslangic'], s['bitis'])})"
+
+    s = settings["Sabahçı"]
+    return f"S ({saat_araligi_kisa(s['baslangic'], s['bitis'])})"
+
+
+vardiya_secenekleri = vardiya_secenekleri_getir()
+
+
 def mail_gonder(alici_mail, konu, mesaj_metni):
     try:
         gonderen_mail = st.secrets["email"]["adres"]
@@ -516,20 +605,20 @@ def get_taslak_df():
             else:
                 if "Karma" in v_str:
                     if f"{g}: Sabahçı" in v_str:
-                        shift = "S (09-18)"
+                        shift = vardiya_kisa_gosterim("Sabahçı")
                     elif f"{g}: Akşamcı" in v_str:
-                        shift = "A (12-21)"
+                        shift = vardiya_kisa_gosterim("Akşamcı")
                     elif f"{g}: Tam Gün" in v_str:
-                        shift = "T (09-21)"
+                        shift = vardiya_kisa_gosterim("Tam Gün")
                     else:
-                        shift = "S (09-18)"
+                        shift = vardiya_kisa_gosterim("Sabahçı")
                 else:
                     if "Akşamcı" in v_str:
-                        shift = "A (12-21)"
+                        shift = vardiya_kisa_gosterim("Akşamcı")
                     elif "Tam" in v_str:
-                        shift = "T (09-21)"
+                        shift = vardiya_kisa_gosterim("Tam Gün")
                     else:
-                        shift = "S (09-18)"
+                        shift = vardiya_kisa_gosterim("Sabahçı")
 
                 taslak.at[p, g] = shift
 
@@ -1778,6 +1867,83 @@ if st.session_state.giris_yapildi:
                     st.error(f"Arka plan kaldırılamadı: {err}")
 
         st.divider()
+        st.subheader("🕒 Vardiya Saatleri")
+        st.caption("Sabahçı, Akşamcı ve Tam Gün vardiya saatlerini buradan değiştirebilirsiniz.")
+
+        mevcut_saatler = get_shift_settings()
+
+        with st.form("vardiya_saatleri_form"):
+            c1, c2, c3 = st.columns(3)
+
+            with c1:
+                st.markdown("**Sabahçı**")
+                sabah_bas = st.time_input(
+                    "Sabahçı Başlangıç",
+                    value=saat_str_to_time(mevcut_saatler["Sabahçı"]["baslangic"]),
+                    key="sabah_bas"
+                )
+                sabah_bit = st.time_input(
+                    "Sabahçı Bitiş",
+                    value=saat_str_to_time(mevcut_saatler["Sabahçı"]["bitis"]),
+                    key="sabah_bit"
+                )
+
+            with c2:
+                st.markdown("**Akşamcı**")
+                aksam_bas = st.time_input(
+                    "Akşamcı Başlangıç",
+                    value=saat_str_to_time(mevcut_saatler["Akşamcı"]["baslangic"]),
+                    key="aksam_bas"
+                )
+                aksam_bit = st.time_input(
+                    "Akşamcı Bitiş",
+                    value=saat_str_to_time(mevcut_saatler["Akşamcı"]["bitis"]),
+                    key="aksam_bit"
+                )
+
+            with c3:
+                st.markdown("**Tam Gün**")
+                tam_bas = st.time_input(
+                    "Tam Gün Başlangıç",
+                    value=saat_str_to_time(mevcut_saatler["Tam Gün"]["baslangic"]),
+                    key="tam_bas"
+                )
+                tam_bit = st.time_input(
+                    "Tam Gün Bitiş",
+                    value=saat_str_to_time(mevcut_saatler["Tam Gün"]["bitis"]),
+                    key="tam_bit"
+                )
+
+            col_saat_save, col_saat_default = st.columns(2)
+
+            with col_saat_save:
+                saat_kaydet = st.form_submit_button("💾 Vardiya Saatlerini Kaydet")
+            with col_saat_default:
+                saat_default = st.form_submit_button("↩️ Saatleri Varsayılana Döndür")
+
+            if saat_kaydet:
+                yeni_saatler = {
+                    "Sabahçı": {"baslangic": time_to_saat_str(sabah_bas), "bitis": time_to_saat_str(sabah_bit)},
+                    "Akşamcı": {"baslangic": time_to_saat_str(aksam_bas), "bitis": time_to_saat_str(aksam_bit)},
+                    "Tam Gün": {"baslangic": time_to_saat_str(tam_bas), "bitis": time_to_saat_str(tam_bit)}
+                }
+
+                ok, err = save_shift_settings(yeni_saatler)
+                if ok:
+                    st.success("Vardiya saatleri kaydedildi.")
+                    st.rerun()
+                else:
+                    st.error(f"Vardiya saatleri kaydedilemedi: {err}")
+
+            if saat_default:
+                ok, err = save_shift_settings(DEFAULT_SHIFT_SETTINGS)
+                if ok:
+                    st.success("Varsayılan vardiya saatleri yüklendi.")
+                    st.rerun()
+                else:
+                    st.error(f"Varsayılan saatler yüklenemedi: {err}")
+
+        st.divider()
         st.subheader("⚙️ Yoğun Saat Operasyon Kuralları")
         st.caption("12:00–18:00 arası minimum personel gereksinimlerini buradan değiştirebilirsiniz.")
 
@@ -1832,4 +1998,15 @@ if st.session_state.giris_yapildi:
                     st.rerun()
                 else:
                     st.error(f"Varsayılan ayarlar yüklenemedi: {err}")
+```
 
+SQL tarafında log tablosu için Supabase SQL Editor’da bunu da çalıştır:
+
+```sql
+create table if not exists islem_loglari (
+  id bigint generated by default as identity primary key,
+  kullanici text,
+  islem text,
+  detay text,
+  tarih text
+);
