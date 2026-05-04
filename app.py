@@ -423,15 +423,27 @@ def get_special_day_for_weekday(gun_adi: str):
     return None
 
 
-def vardiya_kapanis_saati(vardiya_adi: str, gun_adi: str = None):
+def vardiya_saatlerini_getir(vardiya_adi: str, gun_adi: str = None):
     settings = get_shift_settings()
+    baslangic = settings[vardiya_adi]["baslangic"]
     bitis = settings[vardiya_adi]["bitis"]
 
     special_day = get_special_day_for_weekday(gun_adi) if gun_adi else None
-    if special_day and vardiya_adi in ["Akşamcı", "Tam Gün"]:
-        bitis = special_day.get("kapanis", bitis)
+    if special_day:
+        ozel_acilis = special_day.get("acilis", baslangic)
+        ozel_kapanis = special_day.get("kapanis", bitis)
 
-    return bitis
+        if vardiya_adi == "Sabahçı":
+            baslangic = ozel_acilis
+            bitis = settings[vardiya_adi]["bitis"]
+        elif vardiya_adi == "Akşamcı":
+            baslangic = max(settings[vardiya_adi]["baslangic"], ozel_acilis)
+            bitis = ozel_kapanis
+        elif vardiya_adi == "Tam Gün":
+            baslangic = ozel_acilis
+            bitis = ozel_kapanis
+
+    return baslangic, bitis
 
 
 def vardiya_kisa_gosterim(vardiya_adi: str, gun_adi: str = None):
@@ -439,16 +451,16 @@ def vardiya_kisa_gosterim(vardiya_adi: str, gun_adi: str = None):
 
     if vardiya_adi == "Sabahçı":
         s = settings["Sabahçı"]
-        bitis = vardiya_kapanis_saati("Sabahçı", gun_adi)
-        return f"S ({saat_araligi_kisa(s['baslangic'], bitis)})"
+        baslangic, bitis = vardiya_saatlerini_getir("Sabahçı", gun_adi)
+        return f"S ({saat_araligi_kisa(baslangic, bitis)})"
     if vardiya_adi == "Akşamcı":
         s = settings["Akşamcı"]
-        bitis = vardiya_kapanis_saati("Akşamcı", gun_adi)
-        return f"A ({saat_araligi_kisa(s['baslangic'], bitis)})"
+        baslangic, bitis = vardiya_saatlerini_getir("Akşamcı", gun_adi)
+        return f"A ({saat_araligi_kisa(baslangic, bitis)})"
     if vardiya_adi == "Tam Gün":
         s = settings["Tam Gün"]
-        bitis = vardiya_kapanis_saati("Tam Gün", gun_adi)
-        return f"T ({saat_araligi_kisa(s['baslangic'], bitis)})"
+        baslangic, bitis = vardiya_saatlerini_getir("Tam Gün", gun_adi)
+        return f"T ({saat_araligi_kisa(baslangic, bitis)})
 
     s = settings["Sabahçı"]
     bitis = vardiya_kapanis_saati("Sabahçı", gun_adi)
@@ -793,7 +805,7 @@ def peak_coverage_hesapla(taslak_df: pd.DataFrame):
     return coverage, uyarilar
 
 
-def operasyon_kontrol_paneli(taslak_df: pd.DataFrame, baslik="Yoğun Saat Operasyon Kontrolü"):
+def operasyon_kontrol_paneli(taslak_df: pd.DataFrame, baslik="12:00–18:00 Yoğun Saat Operasyon Kontrolü"):
     st.subheader(baslik)
 
     if taslak_df is None or taslak_df.empty:
@@ -917,7 +929,7 @@ def gunluk_vardiya_sayaci(taslak_df: pd.DataFrame, baslik="Günlük Vardiya Saya
             "Tam Gün": tam,
             "İzinli": izinli,
             "Belirsiz": belirsiz,
-            "Aktif Personel Toplamı f Toplam": sabah + aksam + tam
+            "12–18 Aktif Toplam": sabah + aksam + tam
         })
 
     sayac_df = pd.DataFrame(rows)
@@ -1778,7 +1790,7 @@ if st.session_state.giris_yapildi:
 
         with tab_y:
             st.subheader("Haftalık Operasyon Kontrolü")
-            st.caption("Yayınlamadan önce yoğun saat kapasitesi ve genel vardiya dengesi kontrol edilir.")
+            st.caption("Yayınlamadan önce 12:00–18:00 yoğun saat kapasitesi ve genel vardiya dengesi kontrol edilir.")
 
             taslak_df = get_taslak_df()
 
@@ -2077,12 +2089,14 @@ if st.session_state.giris_yapildi:
             with c2:
                 yeni_ozel_tarih = st.date_input("Tarih", value=datetime.now().date())
             with c3:
-                yeni_ozel_kapanis = st.time_input("Kapanış Saati", value=saat_str_to_time("24:00") if False else saat_str_to_time("23:59"))
+                yeni_ozel_acilis = st.time_input("Açılış Saati", value=saat_str_to_time("09:00"))
+                yeni_ozel_kapanis = st.time_input("Kapanış Saati", value=saat_str_to_time("23:59"))
 
             yeni_ozel_not = st.text_input("Not", placeholder="Örn: Yoğun kampanya günü / geç kapanış")
             ekle = st.form_submit_button("➕ Özel Gün Ekle")
 
             if ekle:
+                acilis_str = time_to_saat_str(yeni_ozel_acilis)
                 kapanis_str = time_to_saat_str(yeni_ozel_kapanis)
                 if kapanis_str == "23:59":
                     kapanis_str = "24:00"
@@ -2093,6 +2107,8 @@ if st.session_state.giris_yapildi:
                     ozel_gunler.append({
                         "ad": yeni_ozel_ad.strip(),
                         "tarih": yeni_ozel_tarih.strftime("%Y-%m-%d"),
+                        "acilis": acilis_str,
+                        "acilis": "09:00",
                         "kapanis": kapanis_str,
                         "not": yeni_ozel_not.strip(),
                         "aktif": True
@@ -2120,6 +2136,9 @@ if st.session_state.giris_yapildi:
                             tarih_default = datetime.now().date()
                         tarih = st.date_input("Tarih", value=tarih_default, key=f"ozel_tarih_{i}")
                     with c3:
+                        acilis_default = item.get("acilis", "09:00")
+                        acilis = st.time_input("Açılış", value=saat_str_to_time(acilis_default), key=f"ozel_acilis_{i}")
+
                         kapanis_default = item.get("kapanis", "23:59")
                         if kapanis_default == "24:00":
                             kapanis_default = "23:59"
@@ -2137,7 +2156,9 @@ if st.session_state.giris_yapildi:
                         guncel_ozel_gunler.append({
                             "ad": ad.strip(),
                             "tarih": tarih.strftime("%Y-%m-%d"),
-                            "kapanis": kapanis_str,
+                            "acilis": time_to_saat_str(acilis),
+                            "acilis": "09:00",
+                        "kapanis": kapanis_str,
                             "not": not_metni.strip(),
                             "aktif": aktif
                         })
@@ -2154,7 +2175,7 @@ if st.session_state.giris_yapildi:
 
         st.divider()
         st.subheader("⚙️ Yoğun Saat Operasyon Kuralları")
-        st.caption("Yoğun saatteki minimum personel gereksinimlerini buradan değiştirebilirsiniz.")
+        st.caption("12:00–18:00 arası minimum personel gereksinimlerini buradan değiştirebilirsiniz.")
 
         mevcut_minimumlar = get_peak_minimums()
 
@@ -2207,3 +2228,4 @@ if st.session_state.giris_yapildi:
                     st.rerun()
                 else:
                     st.error(f"Varsayılan ayarlar yüklenemedi: {err}")
+);
