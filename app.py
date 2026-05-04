@@ -2228,4 +2228,3 @@ if st.session_state.giris_yapildi:
                     st.rerun()
                 else:
                     st.error(f"Varsayılan ayarlar yüklenemedi: {err}")
-);
