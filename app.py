@@ -793,7 +793,7 @@ def peak_coverage_hesapla(taslak_df: pd.DataFrame):
     return coverage, uyarilar
 
 
-def operasyon_kontrol_paneli(taslak_df: pd.DataFrame, baslik="12:00–18:00 Yoğun Saat Operasyon Kontrolü"):
+def operasyon_kontrol_paneli(taslak_df: pd.DataFrame, baslik="Yoğun Saat Operasyon Kontrolü"):
     st.subheader(baslik)
 
     if taslak_df is None or taslak_df.empty:
