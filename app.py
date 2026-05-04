@@ -452,11 +452,11 @@ def vardiya_kisa_gosterim(vardiya_adi: str, gun_adi: str = None):
     if vardiya_adi == "Sabahçı":
         s = settings["Sabahçı"]
         baslangic, bitis = vardiya_saatlerini_getir("Sabahçı", gun_adi)
-        return f"S ({saat_araligi_kisa(baslangic, bitis)})"
+        return f "S ({saat_araligi_kisa(baslangic, bitis)})"
     if vardiya_adi == "Akşamcı":
         s = settings["Akşamcı"]
         baslangic, bitis = vardiya_saatlerini_getir("Akşamcı", gun_adi)
-        return f"A ({saat_araligi_kisa(baslangic, bitis)})"
+        return f "A ({saat_araligi_kisa(baslangic, bitis)})"
     if vardiya_adi == "Tam Gün":
         s = settings["Tam Gün"]
         baslangic, bitis = vardiya_saatlerini_getir("Tam Gün", gun_adi)
