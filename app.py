@@ -929,7 +929,7 @@ def gunluk_vardiya_sayaci(taslak_df: pd.DataFrame, baslik="Günlük Vardiya Saya
             "Tam Gün": tam,
             "İzinli": izinli,
             "Belirsiz": belirsiz,
-            "12–18 Aktif Toplam": sabah + aksam + tam
+            "Aktif Toplam": sabah + aksam + tam
         })
 
     sayac_df = pd.DataFrame(rows)
