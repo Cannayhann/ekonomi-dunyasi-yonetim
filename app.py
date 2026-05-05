@@ -1790,7 +1790,7 @@ if st.session_state.giris_yapildi:
 
         with tab_y:
             st.subheader("Haftalık Operasyon Kontrolü")
-            st.caption("Yayınlamadan önce 12:00–18:00 yoğun saat kapasitesi ve genel vardiya dengesi kontrol edilir.")
+            st.caption("Yayınlamadan önce yoğun saat kapasitesi ve genel vardiya dengesi kontrol edilir.")
 
             taslak_df = get_taslak_df()
 
@@ -1802,7 +1802,7 @@ if st.session_state.giris_yapildi:
                 st.divider()
                 uyarilar, kontrol_df = operasyon_kontrol_paneli(
                     taslak_df,
-                    baslik="Yayın Öncesi 12:00–18:00 Operasyon Kontrolü"
+                    baslik="Yayın Öncesi Operasyon Kontrolü"
                 )
             else:
                 uyarilar = []
