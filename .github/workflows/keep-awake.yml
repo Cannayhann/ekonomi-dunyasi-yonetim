@@ -6,11 +6,49 @@ on:
   workflow_dispatch:
 
 jobs:
-  ping:
+  wake:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install chromium
+
       - name: Wake Streamlit App
         run: |
-          curl -L --max-time 60 --silent --output /dev/null \
-          "https://ekonomi-dunyasi-yonetim-msu7zf86qlczbai2sb99am.streamlit.app" || true
+          node <<'EOF'
+          const { chromium } = require('playwright');
+
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+
+            await page.goto('https://ekonomi-dunyasi-yonetim-msu7zf86qlczbai2sb99am.streamlit.app', {
+              waitUntil: 'domcontentloaded',
+              timeout: 90000
+            });
+
+            const wakeButton = page.getByText('Yes, get this app back up!');
+
+            try {
+              if (await wakeButton.isVisible({ timeout: 10000 })) {
+                await wakeButton.click();
+                await page.waitForTimeout(30000);
+              }
+            } catch (e) {
+              await page.waitForTimeout(15000);
+            }
+
+            await browser.close();
+          })();
+          EOF
