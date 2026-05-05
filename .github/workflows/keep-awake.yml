@@ -2,7 +2,7 @@ name: Keep Streamlit Awake
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # her 30 dakikada bir
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Open Streamlit App
+      - name: Wake Streamlit App
         run: |
-          curl -L "https://ekonomi-dunyasi-yonetim-msu7zf86qlczbai2sb99am.streamlit.app" > /dev/null 2>&1
+          curl -L --max-time 60 --silent --output /dev/null \
+          "https://ekonomi-dunyasi-yonetim-msu7zf86qlczbai2sb99am.streamlit.app" || true
